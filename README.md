@@ -47,6 +47,7 @@ serverless.yml 側では適宜それらを読み込むよう設定が必要。
 ```
 directive @model on OBJECT # タイプ名と同じ名前のdynamodbテーブルを作る。
 directive @connection on FIELD_DEFINITION # フィールドを、その型のタイプ名と同じdynamodbテーブルと紐づける。
+directive @function on FIELD_DEFINITION # フィールドを、lambda関数と紐づける
 ```
 
 #### model
@@ -67,11 +68,11 @@ type Customer @model {
 ##### has_one (お互いに)
 
 ```
-type Customer {
+type Customer @model {
   defaultCard: Card @connection(name: "CustomerDefaultCard", myKey: "cardId")
 }
 
-type Card {
+type Card @model {
   owner: Customer @connection(name: "CustomerDefaultCard", myKey: "ownerId")
 }
 
@@ -87,14 +88,13 @@ type Card {
 ##### has_one（同じ ID）
 
 ```
-type Customer {
+type Customer @model {
   user: User @connection(name: "UserCustomer")
 }
 
-type User {
+type User @model {
   customer: Customer @connection(name: "UserCustomer" )
 }
-
 ```
 
 - `@connection` ディレクティブにキー名を何も渡さなかった場合、相互に ID が同じという前提で参照する。
@@ -109,7 +109,6 @@ type Customer @model {
 type Card @model {
   owner: Customer @connection(name: "CustomerCard", myKey: "ownerId")
 }
-
 ```
 
 - `@connection` ディレクティブで、myKey フィールドを指定した場合、自動で name フィールドに渡した名称の GSI が dynamodb に張られる。
@@ -119,6 +118,24 @@ type Card @model {
 
 - Card => Customer
   Customer テーブルの ID キーに Card テーブルの ownerId フィールドを渡し、GetItem で取得する
+
+#### function
+
+```
+# schema.graphql
+type Mutation {
+  fix(id: ID): Result @function(name: "fix")
+}
+```
+
+```
+# serverless.yml
+functions:
+  fix:
+    handler: handler.fix
+```
+
+- name フィールドに渡した名前と、**serverless.yml の functions エントリ内のキーが同じ関数を紐づける**
 
 ## 問題意識
 
