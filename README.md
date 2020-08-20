@@ -42,6 +42,84 @@ serverless.yml 側では適宜それらを読み込むよう設定が必要。
 - `--append-only` (既存ファイルを上書きしなくなる)
   や `---types` (指定の graphql Type のみに処理を実行する) などは便利だと思う
 
+### 利用可能な directive
+
+```
+directive @model on OBJECT # タイプ名と同じ名前のdynamodbテーブルを作る。
+directive @connection on FIELD_DEFINITION # フィールドを、その型のタイプ名と同じdynamodbテーブルと紐づける。
+```
+
+#### model
+
+```
+type Customer @model {
+  id: ID!
+  name: String
+}
+```
+
+- `@model` をつけると、dynamodb のリソースおよび CRUD オペレーションのスキーマ定義、また CRUD オペレーションのリゾルバの実装が生えてくる。
+
+#### connection
+
+- `@connection` をつけると、状況に応じて dynamodb の GSI のリソースおよび コネクションを表現する リゾルバの実装が生えてくる。
+
+##### has_one (お互いに)
+
+```
+type Customer {
+  defaultCard: Card @connection(name: "CustomerDefaultCard", myKey: "cardId")
+}
+
+type Card {
+  owner: Customer @connection(name: "CustomerDefaultCard", myKey: "ownerId")
+}
+
+```
+
+この場合、以下のように結合する。
+
+- Customer => Card  
+  Card テーブルの id キー（プライマリキー）に、 Customer テーブルの cardId フィールドの値を渡して GetItem する
+- Card => Customer
+  Customer テーブルの id キー（プライマリキー）に、 Card テーブルの ownerId フィールドの値を渡して GetItem する
+
+##### has_one（同じ ID）
+
+```
+type Customer {
+  user: User @connection(name: "UserCustomer")
+}
+
+type User {
+  customer: Customer @connection(name: "UserCustomer" )
+}
+
+```
+
+- `@connection` ディレクティブにキー名を何も渡さなかった場合、相互に ID が同じという前提で参照する。
+
+##### has_many / belongs_to
+
+```
+type Customer @model {
+  cards: [Card] @connection(name: "CustomerCard", yourKey: "ownerId")
+}
+
+type Card @model {
+  owner: Customer @connection(name: "CustomerCard", myKey: "ownerId")
+}
+
+```
+
+- `@connection` ディレクティブで、myKey フィールドを指定した場合、自動で name フィールドに渡した名称の GSI が dynamodb に張られる。
+
+- Customer => Card  
+  Card テーブルの CustomerCard という GSI の ownerId キーに Customer テーブルの ID フィールドを渡し、Query でリストを取得する
+
+- Card => Customer
+  Customer テーブルの ID キーに Card テーブルの ownerId フィールドを渡し、GetItem で取得する
+
 ## 問題意識
 
 ### serverless 界の Rails を作りたい
