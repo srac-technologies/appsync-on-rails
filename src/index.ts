@@ -32,10 +32,18 @@ const recursiveWalk = (
   }
 };
 
-recursiveWalk(
+FsProxy.instance.accept(
+  path.join(p, "schema", schema),
   fs.readFileSync(path.join(p, schema), { encoding: "utf-8" }),
-  []
-).forEach((p) => {
+  args["base-dir"]
+);
+
+recursiveWalk(fs.readFileSync(path.join(p, schema), { encoding: "utf-8" }), [
+  {
+    body: fs.readFileSync(path.join(p, schema), { encoding: "utf-8" }),
+    path: path.join(p, "schema", schema),
+  },
+]).forEach((p) => {
   !fs.existsSync(path.dirname(p.path)) &&
     fs.mkdirSync(path.dirname(p.path), { recursive: true });
   if (args["append-only"] && fs.existsSync(p.path)) {

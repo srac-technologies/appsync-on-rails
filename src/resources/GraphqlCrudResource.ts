@@ -4,11 +4,14 @@ import {
   Kind,
   FieldDefinitionNode,
   InputValueDefinitionNode,
+  DocumentNode,
+  InputObjectTypeDefinitionNode,
 } from "graphql";
 import {
   IResource,
   ResourceDefinition,
 } from "../interfaces/resource/IResource";
+import { args } from "../io/CliArgs";
 
 export class GraphqlCrudResource implements IResource {
   constructor(
@@ -108,6 +111,42 @@ export class GraphqlCrudResource implements IResource {
           this.typeNode
         ),
       },
+      {
+        location: `schema/schema.graphql`,
+        path: (from: DocumentNode) => {
+          return (value: any) => {
+            const t = <ObjectTypeDefinitionNode>(
+              from.definitions.find(
+                (d) =>
+                  d.kind === "ObjectTypeDefinition" &&
+                  d.name.value === this.tableName
+              )
+            );
+            if (t) {
+              return {
+                ...from,
+                definitions: [
+                  ...from.definitions.filter(
+                    (d) =>
+                      !(
+                        d.kind === "ObjectTypeDefinition" &&
+                        d.name.value === this.tableName
+                      )
+                  ),
+                  <ObjectTypeDefinitionNode>{
+                    ...t,
+                    directives: (t.directives || []).filter(
+                      (d) => d.name.value !== "model"
+                    ),
+                  },
+                ],
+              };
+            }
+            return from;
+          };
+        },
+        resource: {},
+      },
     ];
   }
 }
@@ -162,14 +201,14 @@ const buildCrudOperations = (
   return `
  extend type Query {
   get${typeName}(${keyName}: ID!): ${typeName} 
-  list${typeName}s(filter: Model${typeName}FilterInput, limit: Int, nextToken: String): ModelList${typeName}s 
+  list${typeName}s(filter: Model${typeName}FilterInput, limit: Int, nextToken: String): Model${typeName}Connetion 
  }
  extend type Mutation {
   create${typeName}(input: Create${typeName}Input!, condition: Model${typeName}ConditionInput): ${typeName}
   update${typeName}(input: Update${typeName}Input!, condition: Model${typeName}ConditionInput): ${typeName}
   delete${typeName}(input: Delete${typeName}Input!, condition: Model${typeName}ConditionInput): ${typeName}
  }
- type ModelList${typeName}s {
+ type Model${typeName}Connection {
    items: [${typeName}]
    nextToken: String
  }
@@ -232,6 +271,17 @@ const buildCrudOperations = (
            value: {
              kind: "StringValue",
              value: typeName,
+           },
+         },
+         {
+           kind: "Argument",
+           name: {
+             kind: "Name",
+             value: "condition",
+           },
+           value: {
+             kind: "BooleanValue",
+             value: true,
            },
          },
        ],
@@ -297,6 +347,17 @@ const buildCrudOperations = (
            value: {
              kind: "StringValue",
              value: typeName,
+           },
+         },
+         {
+           kind: "Argument",
+           name: {
+             kind: "Name",
+             value: "condition",
+           },
+           value: {
+             kind: "BooleanValue",
+             value: true,
            },
          },
        ],

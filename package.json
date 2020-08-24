@@ -1,12 +1,12 @@
 {
   "name": "appsync-on-rails",
   "bin": {
-    "sls-on-rails": "bin/index.js"
+    "appsync-on-rails": "bin/index.js"
   },
   "repository": {
     "url": "https://github.com/srac-technologies/appsync-on-rails"
   },
-  "version": "0.0.1",
+  "version": "0.0.2",
   "main": "lib/index.js",
   "license": "MIT",
   "dependencies": {

@@ -57,7 +57,11 @@ export class ConnectionDirective implements IDirective {
                 .value,
             },
           },
-        }
+        },
+        !!(
+          (type.directives || []).find((d) => d.name.value === "modelInput")
+            ?.arguments || []
+        ).find((a) => a.name.value === "condition")
       ),
     ];
   }
@@ -79,29 +83,33 @@ export class ConnectionDirective implements IDirective {
     }
     const parent = <TypeDefinitionNode>context.parent().node;
     return [
-      new GraphqlConnectionResource(parent.name.value, {
-        name: args.find((a) => a.name === "name")?.value || "",
-        type: ((n) => {
-          switch (n.type.kind) {
-            case "ListType":
-              return "HAS_MANY";
-            case "NonNullType":
-              return n.type.type.kind === "ListType" ? "HAS_MANY" : "HAS_ONE";
-            case "NamedType":
-              return "HAS_ONE";
-          }
-        })(node),
-        relationSpec: {
-          field: node.name.value,
-          type: getType(node).value,
-          keyName: {
-            mine: (args.find((a) => a.name === "myKey") || { value: "id" })
-              .value,
-            yours: (args.find((a) => a.name === "yourKey") || { value: "id" })
-              .value,
+      new GraphqlConnectionResource(
+        parent.name.value,
+        {
+          name: args.find((a) => a.name === "name")?.value || "",
+          type: ((n) => {
+            switch (n.type.kind) {
+              case "ListType":
+                return "HAS_MANY";
+              case "NonNullType":
+                return n.type.type.kind === "ListType" ? "HAS_MANY" : "HAS_ONE";
+              case "NamedType":
+                return "HAS_ONE";
+            }
+          })(node),
+          relationSpec: {
+            field: node.name.value,
+            type: getType(node).value,
+            keyName: {
+              mine: (args.find((a) => a.name === "myKey") || { value: "id" })
+                .value,
+              yours: (args.find((a) => a.name === "yourKey") || { value: "id" })
+                .value,
+            },
           },
         },
-      }),
+        node
+      ),
       ...args
         .filter((a) => a.name === "myKey")
         .filter((a) => a.value !== "id")

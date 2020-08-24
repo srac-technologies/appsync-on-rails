@@ -6,7 +6,11 @@ import {
   InputObjectTypeDefinitionNode,
   InputValueDefinitionNode,
   DocumentNode,
+  ObjectTypeDefinitionNode,
+  FieldDefinitionNode,
 } from "graphql";
+import { args } from "../io/CliArgs";
+import { type } from "os";
 
 export type GraphqlConnectionSpec = {
   name: string;
@@ -26,7 +30,8 @@ export class GraphqlConnectedInputResource implements IResource {
     private tableName: string,
     private typeNode: InputObjectTypeDefinitionNode,
     private fieldNode: InputValueDefinitionNode,
-    private spec: GraphqlConnectionSpec
+    private spec: GraphqlConnectionSpec,
+    private condition: boolean
   ) {}
 
   outputResourceDefinition(): ResourceDefinition[] {
@@ -131,7 +136,7 @@ export class GraphqlConnectedInputResource implements IResource {
             kind: "NamedType",
             name: {
               kind: "Name",
-              value: "String",
+              value: this.condition ? `ModelStringInput` : "String",
             },
           },
         },
@@ -140,13 +145,160 @@ export class GraphqlConnectedInputResource implements IResource {
   }
 }
 
+const buildListFieldNode = (
+  fieldNode: FieldDefinitionNode
+): FieldDefinitionNode => {
+  // (filter: ModelEmployeeFilterInput, sortDirection: ModelSortDirection, limit: Int, nextToken: String)
+  switch (fieldNode.type.kind) {
+    case "ListType":
+      const typeName =
+        fieldNode.type.type.kind === "NamedType"
+          ? fieldNode.type.type.name.value
+          : "";
+      return {
+        ...fieldNode,
+        arguments: [
+          <InputValueDefinitionNode>{
+            kind: "InputValueDefinition",
+            name: {
+              kind: "Name",
+              value: "filter",
+            },
+            type: {
+              kind: "NamedType",
+              name: {
+                kind: "Name",
+                value: `Model${typeName}FilterInput`,
+              },
+            },
+          },
+          <InputValueDefinitionNode>{
+            kind: "InputValueDefinition",
+            name: {
+              kind: "Name",
+              value: "sortDirection",
+            },
+            type: {
+              kind: "NamedType",
+              name: {
+                kind: "Name",
+                value: `ModelSortDirection`,
+              },
+            },
+          },
+          <InputValueDefinitionNode>{
+            kind: "InputValueDefinition",
+            name: {
+              kind: "Name",
+              value: "limit",
+            },
+            type: {
+              kind: "NamedType",
+              name: {
+                kind: "Name",
+                value: `Int`,
+              },
+            },
+          },
+          <InputValueDefinitionNode>{
+            kind: "InputValueDefinition",
+            name: {
+              kind: "Name",
+              value: "nextToken",
+            },
+            type: {
+              kind: "NamedType",
+              name: {
+                kind: "Name",
+                value: `String`,
+              },
+            },
+          },
+        ],
+        type: {
+          kind: "NamedType",
+          name: {
+            kind: "Name",
+            value: `Model${typeName}Connection`,
+          },
+        },
+        directives: [
+          ...(fieldNode.directives || []).filter(
+            (f) => f.name.value !== "connection"
+          ),
+        ],
+      };
+    case "NamedType":
+      return {
+        ...fieldNode,
+        directives: [
+          ...(fieldNode.directives || []).filter(
+            (f) => f.name.value !== "connection"
+          ),
+        ],
+      };
+    case "NonNullType":
+      return {
+        ...fieldNode,
+        directives: [
+          ...(fieldNode.directives || []).filter(
+            (f) => f.name.value !== "connection"
+          ),
+        ],
+      };
+  }
+};
 export class GraphqlConnectionResource implements IResource {
   constructor(
     private tableName: string,
-    private graphqlConnectionSpec: GraphqlConnectionSpec
+    private graphqlConnectionSpec: GraphqlConnectionSpec,
+    private fieldNode: FieldDefinitionNode
   ) {}
+
   outputResourceDefinition(): ResourceDefinition[] {
     return [
+      {
+        location: `schema/${args["in-schema"]}`,
+        resource: buildListFieldNode(this.fieldNode),
+        path: (from: DocumentNode) => {
+          return (value: any) => {
+            const t = <ObjectTypeDefinitionNode>(
+              from.definitions.find(
+                (d) =>
+                  d.kind === "ObjectTypeDefinition" &&
+                  d.name.value === this.tableName
+              )
+            );
+            if (t) {
+              return {
+                ...from,
+                definitions: [
+                  ...from.definitions.filter(
+                    (d) =>
+                      !(
+                        d.kind === "ObjectTypeDefinition" &&
+                        d.name.value === this.tableName
+                      )
+                  ),
+                  <ObjectTypeDefinitionNode>{
+                    ...t,
+                    kind: "ObjectTypeDefinition",
+                    fields: [
+                      ...(t.fields || []).filter(
+                        (f) =>
+                          f.name.value !==
+                          this.graphqlConnectionSpec.relationSpec.field
+                      ),
+                      value,
+                    ],
+                  },
+                ],
+              };
+            }
+            return from;
+          };
+        },
+      },
       {
         location: `resources/appsync/${this.tableName}.${this.graphqlConnectionSpec.relationSpec.field}.mapping.yml`,
         path: "",
