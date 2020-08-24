@@ -7,6 +7,3 @@ export type ResourceDefinition = {
 export interface IResourceDefinition {
   print(): string;
 }
-export interface IResource {
-  outputResourceDefinition(): ResourceDefinition[];
-}

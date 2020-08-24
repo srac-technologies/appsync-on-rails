@@ -1,9 +1,8 @@
 import { ASTNode, TypeDefinitionNode } from "graphql";
 import { TransformContext } from "../../interfaces/context/TransformContext";
 import { DirectiveArg, IDirective } from "../../interfaces/directive/Directive";
-import { IResource } from "../../interfaces/resource/IResource";
+import { typeMatch } from "../../io/CliArgs";
 import { FunctionResource } from "../../resources/FunctionResource";
-import { args, typeMatch } from "../../io/CliArgs";
 
 const NAME = "function";
 export class FunctionDirective implements IDirective {
@@ -12,7 +11,7 @@ export class FunctionDirective implements IDirective {
     args: DirectiveArg[],
     node: ASTNode,
     context: TransformContext
-  ): false | IResource[] {
+  ) {
     if (
       name !== NAME ||
       node.kind !== "FieldDefinition" ||
@@ -21,12 +20,10 @@ export class FunctionDirective implements IDirective {
       return false;
     }
     const parent = <TypeDefinitionNode>context.parent().node;
-    return [
-      new FunctionResource(
-        args.find((a) => a.name === "name")?.value as string || "",
-        parent.name.value,
-        node.name.value
-      ),
-    ];
+    new FunctionResource(
+      args.find((a) => a.name === "name")?.value as string || "",
+      parent.name.value,
+      node.name.value
+    )
   }
 }

@@ -1,6 +1,5 @@
 import { ASTNode } from "graphql";
 import { TransformContext } from "../context/TransformContext";
-import { IResource } from "../resource/IResource";
 
 export type DirectiveArg = {
   name: string;
@@ -12,5 +11,5 @@ export interface IDirective {
     args: DirectiveArg[],
     node: ASTNode,
     context: TransformContext
-  ): IResource[] | false;
+  ): void;
 }

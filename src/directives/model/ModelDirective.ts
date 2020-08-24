@@ -1,10 +1,8 @@
-import { IDirective, DirectiveArg } from "../../interfaces/directive/Directive";
-import { TransformContext } from "../../interfaces/context/TransformContext";
-import { IResource } from "../../interfaces/resource/IResource";
 import { TypeSystemDefinitionNode } from "graphql";
-import { DynamoDBTableResource } from "../../resources/DynamoDBTableResource";
-import { GraphqlCrudResource } from "../../resources/GraphqlCrudResource";
+import { TransformContext } from "../../interfaces/context/TransformContext";
+import { DirectiveArg, IDirective } from "../../interfaces/directive/Directive";
 import { typeMatch } from "../../io/CliArgs";
+import { TableResource } from "../../resources/TableResource";
 
 const NAME = "model";
 export class ModelDirective implements IDirective {
@@ -13,7 +11,7 @@ export class ModelDirective implements IDirective {
     args: DirectiveArg[],
     node: TypeSystemDefinitionNode,
     context: TransformContext
-  ): false | IResource[] {
+  ) {
     if (
       name !== NAME ||
       node.kind !== "ObjectTypeDefinition" ||
@@ -21,9 +19,6 @@ export class ModelDirective implements IDirective {
     ) {
       return false;
     }
-    return [
-      new DynamoDBTableResource(node.name.value),
-      new GraphqlCrudResource(node.name.value, "id", node),
-    ];
+    new TableResource(node.name.value, "DYNAMODB", node) // automatically register
   }
 }

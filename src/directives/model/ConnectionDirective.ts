@@ -1,20 +1,14 @@
 import {
   ASTNode,
   FieldDefinitionNode,
-  TypeDefinitionNode,
+
   InputObjectTypeDefinitionNode,
-  InputValueDefinitionNode,
-  StringValueNode,
+  InputValueDefinitionNode, TypeDefinitionNode
 } from "graphql";
 import { TransformContext } from "../../interfaces/context/TransformContext";
 import { DirectiveArg, IDirective } from "../../interfaces/directive/Directive";
-import { IResource } from "../../interfaces/resource/IResource";
-import { DynamoDBIndexResource } from "../../resources/DynamoDBIndexResource";
-import {
-  GraphqlConnectionResource,
-  GraphqlConnectedInputResource,
-} from "../../resources/GraphqlConnectionResource";
 import { typeMatch } from "../../io/CliArgs";
+import { TableResource } from "../../resources/TableResource";
 
 const NAME = "connection";
 export class ConnectionDirective implements IDirective {
@@ -25,45 +19,6 @@ export class ConnectionDirective implements IDirective {
     context: TransformContext
   ) {
     const type = <InputObjectTypeDefinitionNode>context.parent().node;
-    return [
-      new GraphqlConnectedInputResource(
-        (<StringValueNode>(
-          (
-            (type.directives || []).find((d) => d.name.value === "modelInput")
-              ?.arguments || []
-          ).find((a) => a.name.value === "name")?.value
-        )).value || "",
-        type,
-        <InputValueDefinitionNode>node,
-        {
-          name: args.find((a) => a.name === "name")?.value as string || "",
-          type: ((n) => {
-            switch (n.type.kind) {
-              case "ListType":
-                return "HAS_MANY";
-              case "NonNullType":
-                return n.type.type.kind === "ListType" ? "HAS_MANY" : "HAS_ONE";
-              case "NamedType":
-                return "HAS_ONE";
-            }
-          })(<InputValueDefinitionNode>node),
-          relationSpec: {
-            field: (<InputValueDefinitionNode>node).name.value,
-            type: getType(<InputValueDefinitionNode>node).value,
-            keyName: {
-              mine: (args.find((a) => a.name === "myKey") || { value: "id" })
-                .value as string,
-              yours: (args.find((a) => a.name === "yourKey") || { value: "id" })
-                .value as string,
-            },
-          },
-        },
-        !!(
-          (type.directives || []).find((d) => d.name.value === "modelInput")
-            ?.arguments || []
-        ).find((a) => a.name.value === "condition")
-      ),
-    ];
   }
 
   next(
@@ -71,56 +26,20 @@ export class ConnectionDirective implements IDirective {
     args: DirectiveArg[],
     node: ASTNode,
     context: TransformContext
-  ): false | IResource[] {
+  ) {
     if (name !== NAME || !typeMatch(context)) {
       return false;
-    }
-    if (node.kind === "InputValueDefinition") {
-      return this.replaceInputAsKey(name, args, node, context);
     }
     if (node.kind !== "FieldDefinition") {
       return false;
     }
     const parent = <TypeDefinitionNode>context.parent().node;
-    return [
-      new GraphqlConnectionResource(
-        parent.name.value,
-        {
-          name: args.find((a) => a.name === "name")?.value as string || "",
-          type: ((n) => {
-            switch (n.type.kind) {
-              case "ListType":
-                return "HAS_MANY";
-              case "NonNullType":
-                return n.type.type.kind === "ListType" ? "HAS_MANY" : "HAS_ONE";
-              case "NamedType":
-                return "HAS_ONE";
-            }
-          })(node),
-          relationSpec: {
-            field: node.name.value,
-            type: getType(node).value,
-            keyName: {
-              mine: (args.find((a) => a.name === "myKey") || { value: "id" })
-                .value as string,
-              yours: (args.find((a) => a.name === "yourKey") || { value: "id" })
-                .value as string,
-            },
-          },
-        },
-        node
-      ),
-      ...args
-        .filter((a) => a.name === "myKey")
-        .filter((a) => a.value !== "id")
-        .map(
-          (a) =>
-            new DynamoDBIndexResource(parent.name.value, {
-              fields: [a.value as string],
-              name: args.find((a) => a.name === "name")?.value as string || "",
-            })
-        ),
-    ];
+    TableResource.table(parent.name.value)?.hasConnection({
+      hasMany: node.type.kind === "ListType" || (node.type.kind === "NonNullType" && node.type.type.kind === "ListType"),
+      name: args.find(a => a.name === 'name')?.value as string || '',
+      with: getType(node).value,
+      foreignKey: args.find(a => a.name === 'foreignKey')?.value as string || undefined
+    })
   }
 }
 

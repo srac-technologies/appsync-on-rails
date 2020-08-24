@@ -1,15 +1,19 @@
-import {
-  IResource,
-  ResourceDefinition,
-} from "../interfaces/resource/IResource";
+import { ResourceDefinition } from "../interfaces/resource/IResource";
+import { Printable } from "../interfaces/resource/Printable";
 
-export class FunctionResource implements IResource {
+export class FunctionResource implements Printable {
+
+  static instances: FunctionResource[] = []
+
   constructor(
     private functionName: string,
     private typeName: string,
     private fieldName: string
-  ) {}
-  outputResourceDefinition(): ResourceDefinition[] {
+  ) {
+    FunctionResource.instances.push(this)
+  }
+
+  print(): ResourceDefinition[] {
     return [
       {
         location: `resources/appsync/${this.typeName}.${this.fieldName}.mapping.yml`,
