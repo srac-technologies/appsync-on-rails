@@ -23,7 +23,7 @@ export class FunctionDirective implements IDirective {
     const parent = <TypeDefinitionNode>context.parent().node;
     return [
       new FunctionResource(
-        args.find((a) => a.name === "name")?.value || "",
+        args.find((a) => a.name === "name")?.value as string || "",
         parent.name.value,
         node.name.value
       ),

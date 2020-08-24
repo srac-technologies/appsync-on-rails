@@ -38,7 +38,7 @@ export class ResourceFactory {
                 d.name.value,
                 d.arguments?.map((a) => ({
                   name: a.name.value,
-                  value: a.value.kind === "StringValue" ? a.value.value : "",
+                  value: a.value.kind === "StringValue" ? a.value.value : a.value.kind === 'ListValue' && a.value.values.map(v => v.kind === 'StringValue' && v.value) as string[] || "",
                 })) || [],
                 type,
                 typeContext

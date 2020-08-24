@@ -4,7 +4,7 @@ import { IResource } from "../resource/IResource";
 
 export type DirectiveArg = {
   name: string;
-  value: string;
+  value: string | string[];
 };
 export interface IDirective {
   next(

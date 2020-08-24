@@ -36,7 +36,7 @@ export class ConnectionDirective implements IDirective {
         type,
         <InputValueDefinitionNode>node,
         {
-          name: args.find((a) => a.name === "name")?.value || "",
+          name: args.find((a) => a.name === "name")?.value as string || "",
           type: ((n) => {
             switch (n.type.kind) {
               case "ListType":
@@ -52,9 +52,9 @@ export class ConnectionDirective implements IDirective {
             type: getType(<InputValueDefinitionNode>node).value,
             keyName: {
               mine: (args.find((a) => a.name === "myKey") || { value: "id" })
-                .value,
+                .value as string,
               yours: (args.find((a) => a.name === "yourKey") || { value: "id" })
-                .value,
+                .value as string,
             },
           },
         },
@@ -86,7 +86,7 @@ export class ConnectionDirective implements IDirective {
       new GraphqlConnectionResource(
         parent.name.value,
         {
-          name: args.find((a) => a.name === "name")?.value || "",
+          name: args.find((a) => a.name === "name")?.value as string || "",
           type: ((n) => {
             switch (n.type.kind) {
               case "ListType":
@@ -102,9 +102,9 @@ export class ConnectionDirective implements IDirective {
             type: getType(node).value,
             keyName: {
               mine: (args.find((a) => a.name === "myKey") || { value: "id" })
-                .value,
+                .value as string,
               yours: (args.find((a) => a.name === "yourKey") || { value: "id" })
-                .value,
+                .value as string,
             },
           },
         },
@@ -116,8 +116,8 @@ export class ConnectionDirective implements IDirective {
         .map(
           (a) =>
             new DynamoDBIndexResource(parent.name.value, {
-              fields: [a.value],
-              name: args.find((a) => a.name === "name")?.value || "",
+              fields: [a.value as string],
+              name: args.find((a) => a.name === "name")?.value as string || "",
             })
         ),
     ];

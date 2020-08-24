@@ -18,7 +18,7 @@ export class GraphqlCrudResource implements IResource {
     private tableName: string,
     private primaryKey: string = "id",
     private typeNode: ObjectTypeDefinitionNode
-  ) {}
+  ) { }
   outputResourceDefinition(): ResourceDefinition[] {
     return [
       {
@@ -193,6 +193,7 @@ const makeTypeModelInput = (
   }
 };
 
+
 const buildCrudOperations = (
   typeName: string,
   keyName: string,
@@ -213,235 +214,235 @@ const buildCrudOperations = (
    nextToken: String
  }
  ${print({
-   kind: "InputObjectTypeDefinition",
-   name: {
-     kind: "Name",
-     value: `Model${typeName}ConditionInput`,
-   },
-   fields: [
-     ...(typeNode.fields || []).map((f) => makeTypeModelInput(f)),
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: { kind: "Name", value: "and" },
-       type: {
-         kind: "ListType",
-         type: {
-           kind: "NamedType",
-           name: { kind: "Name", value: `Model${typeName}ConditionInput` },
-         },
-       },
-     },
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: { kind: "Name", value: "or" },
-       type: {
-         kind: "ListType",
-         type: {
-           kind: "NamedType",
-           name: { kind: "Name", value: `Model${typeName}ConditionInput` },
-         },
-       },
-     },
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: {
-         kind: "Name",
-         value: "not",
-       },
-       type: {
-         kind: "NamedType",
-         name: { kind: "Name", value: `Model${typeName}ConditionInput` },
-       },
-     },
-   ],
-   directives: [
-     {
-       kind: "Directive",
-       name: {
-         kind: "Name",
-         value: "modelInput",
-       },
-       arguments: [
-         {
-           kind: "Argument",
-           name: {
-             kind: "Name",
-             value: "name",
-           },
-           value: {
-             kind: "StringValue",
-             value: typeName,
-           },
-         },
-         {
-           kind: "Argument",
-           name: {
-             kind: "Name",
-             value: "condition",
-           },
-           value: {
-             kind: "BooleanValue",
-             value: true,
-           },
-         },
-       ],
-     },
-   ],
- })}
+    kind: "InputObjectTypeDefinition",
+    name: {
+      kind: "Name",
+      value: `Model${typeName}ConditionInput`,
+    },
+    fields: [
+      ...(typeNode.fields || []).map((f) => makeTypeModelInput(f)),
+      {
+        kind: Kind.INPUT_VALUE_DEFINITION,
+        name: { kind: "Name", value: "and" },
+        type: {
+          kind: "ListType",
+          type: {
+            kind: "NamedType",
+            name: { kind: "Name", value: `Model${typeName}ConditionInput` },
+          },
+        },
+      },
+      {
+        kind: Kind.INPUT_VALUE_DEFINITION,
+        name: { kind: "Name", value: "or" },
+        type: {
+          kind: "ListType",
+          type: {
+            kind: "NamedType",
+            name: { kind: "Name", value: `Model${typeName}ConditionInput` },
+          },
+        },
+      },
+      {
+        kind: Kind.INPUT_VALUE_DEFINITION,
+        name: {
+          kind: "Name",
+          value: "not",
+        },
+        type: {
+          kind: "NamedType",
+          name: { kind: "Name", value: `Model${typeName}ConditionInput` },
+        },
+      },
+    ],
+    directives: [
+      {
+        kind: "Directive",
+        name: {
+          kind: "Name",
+          value: "modelInput",
+        },
+        arguments: [
+          {
+            kind: "Argument",
+            name: {
+              kind: "Name",
+              value: "name",
+            },
+            value: {
+              kind: "StringValue",
+              value: typeName,
+            },
+          },
+          {
+            kind: "Argument",
+            name: {
+              kind: "Name",
+              value: "condition",
+            },
+            value: {
+              kind: "BooleanValue",
+              value: true,
+            },
+          },
+        ],
+      },
+    ],
+  })}
  ${print({
-   kind: "InputObjectTypeDefinition",
-   name: {
-     kind: "Name",
-     value: `Model${typeName}FilterInput`,
-   },
-   fields: [
-     ...(typeNode.fields || []).map((f) => makeTypeModelInput(f)),
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: { kind: "Name", value: "and" },
-       type: {
-         kind: "ListType",
-         type: {
-           kind: "NamedType",
-           name: { kind: "Name", value: `Model${typeName}FilterInput` },
-         },
-       },
-     },
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: { kind: "Name", value: "or" },
-       type: {
-         kind: "ListType",
-         type: {
-           kind: "NamedType",
-           name: { kind: "Name", value: `Model${typeName}FilterInput` },
-         },
-       },
-     },
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: {
-         kind: "Name",
-         value: "not",
-       },
-       type: {
-         kind: "NamedType",
-         name: { kind: "Name", value: `Model${typeName}FilterInput` },
-       },
-     },
-   ],
-   directives: [
-     {
-       kind: "Directive",
-       name: {
-         kind: "Name",
-         value: "modelInput",
-       },
-       arguments: [
-         {
-           kind: "Argument",
-           name: {
-             kind: "Name",
-             value: "name",
-           },
-           value: {
-             kind: "StringValue",
-             value: typeName,
-           },
-         },
-         {
-           kind: "Argument",
-           name: {
-             kind: "Name",
-             value: "condition",
-           },
-           value: {
-             kind: "BooleanValue",
-             value: true,
-           },
-         },
-       ],
-     },
-   ],
- })}
+    kind: "InputObjectTypeDefinition",
+    name: {
+      kind: "Name",
+      value: `Model${typeName}FilterInput`,
+    },
+    fields: [
+      ...(typeNode.fields || []).map((f) => makeTypeModelInput(f)),
+      {
+        kind: Kind.INPUT_VALUE_DEFINITION,
+        name: { kind: "Name", value: "and" },
+        type: {
+          kind: "ListType",
+          type: {
+            kind: "NamedType",
+            name: { kind: "Name", value: `Model${typeName}FilterInput` },
+          },
+        },
+      },
+      {
+        kind: Kind.INPUT_VALUE_DEFINITION,
+        name: { kind: "Name", value: "or" },
+        type: {
+          kind: "ListType",
+          type: {
+            kind: "NamedType",
+            name: { kind: "Name", value: `Model${typeName}FilterInput` },
+          },
+        },
+      },
+      {
+        kind: Kind.INPUT_VALUE_DEFINITION,
+        name: {
+          kind: "Name",
+          value: "not",
+        },
+        type: {
+          kind: "NamedType",
+          name: { kind: "Name", value: `Model${typeName}FilterInput` },
+        },
+      },
+    ],
+    directives: [
+      {
+        kind: "Directive",
+        name: {
+          kind: "Name",
+          value: "modelInput",
+        },
+        arguments: [
+          {
+            kind: "Argument",
+            name: {
+              kind: "Name",
+              value: "name",
+            },
+            value: {
+              kind: "StringValue",
+              value: typeName,
+            },
+          },
+          {
+            kind: "Argument",
+            name: {
+              kind: "Name",
+              value: "condition",
+            },
+            value: {
+              kind: "BooleanValue",
+              value: true,
+            },
+          },
+        ],
+      },
+    ],
+  })}
  ${print({
-   kind: "InputObjectTypeDefinition",
-   name: {
-     kind: "Name",
-     value: `Create${typeName}Input`,
-   },
-   fields: typeNode.fields?.map((f) => ({
-     ...f,
-     type:
-       f.type.kind === "NonNullType" &&
-       f.type.type.kind === "NamedType" &&
-       f.type.type.name.value === "ID"
-         ? {
-             kind: "NamedType",
-             name: {
-               kind: "Name",
-               value: "ID",
-             },
-           }
-         : f.type,
-     kind: "InputValueDefinition",
-   })),
-   directives: [
-     {
-       kind: "Directive",
-       name: {
-         kind: "Name",
-         value: "modelInput",
-       },
-       arguments: [
-         {
-           kind: "Argument",
-           name: {
-             kind: "Name",
-             value: "name",
-           },
-           value: {
-             kind: "StringValue",
-             value: typeName,
-           },
-         },
-       ],
-     },
-   ],
- })}
+    kind: "InputObjectTypeDefinition",
+    name: {
+      kind: "Name",
+      value: `Create${typeName}Input`,
+    },
+    fields: typeNode.fields?.map((f) => ({
+      ...f,
+      type:
+        f.type.kind === "NonNullType" &&
+          f.type.type.kind === "NamedType" &&
+          f.type.type.name.value === "ID"
+          ? {
+            kind: "NamedType",
+            name: {
+              kind: "Name",
+              value: "ID",
+            },
+          }
+          : f.type,
+      kind: "InputValueDefinition",
+    })),
+    directives: [
+      {
+        kind: "Directive",
+        name: {
+          kind: "Name",
+          value: "modelInput",
+        },
+        arguments: [
+          {
+            kind: "Argument",
+            name: {
+              kind: "Name",
+              value: "name",
+            },
+            value: {
+              kind: "StringValue",
+              value: typeName,
+            },
+          },
+        ],
+      },
+    ],
+  })}
  ${print({
-   kind: "InputObjectTypeDefinition",
-   name: {
-     kind: "Name",
-     value: `Update${typeName}Input`,
-   },
-   fields: typeNode.fields?.map((f) => ({
-     ...f,
-     kind: "InputValueDefinition",
-   })),
-   directives: [
-     {
-       kind: "Directive",
-       name: {
-         kind: "Name",
-         value: "modelInput",
-       },
-       arguments: [
-         {
-           kind: "Argument",
-           name: {
-             kind: "Name",
-             value: "name",
-           },
-           value: {
-             kind: "StringValue",
-             value: typeName,
-           },
-         },
-       ],
-     },
-   ],
- })}
+    kind: "InputObjectTypeDefinition",
+    name: {
+      kind: "Name",
+      value: `Update${typeName}Input`,
+    },
+    fields: typeNode.fields?.map((f) => ({
+      ...f,
+      kind: "InputValueDefinition",
+    })),
+    directives: [
+      {
+        kind: "Directive",
+        name: {
+          kind: "Name",
+          value: "modelInput",
+        },
+        arguments: [
+          {
+            kind: "Argument",
+            name: {
+              kind: "Name",
+              value: "name",
+            },
+            value: {
+              kind: "StringValue",
+              value: typeName,
+            },
+          },
+        ],
+      },
+    ],
+  })}
  input Delete${typeName}Input {
    ${keyName}: ID!
  }
