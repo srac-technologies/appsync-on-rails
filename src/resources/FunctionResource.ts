@@ -1,16 +1,17 @@
 import { ResourceDefinition } from "../interfaces/resource/IResource";
 import { Printable } from "../interfaces/resource/Printable";
+import { args } from "../io/CliArgs";
+import { DiggerUtils } from "../utils/DiggerUtils";
 
 export class FunctionResource implements Printable {
-
-  static instances: FunctionResource[] = []
+  static instances: FunctionResource[] = [];
 
   constructor(
     private functionName: string,
     private typeName: string,
     private fieldName: string
   ) {
-    FunctionResource.instances.push(this)
+    FunctionResource.instances.push(this);
   }
 
   print(): ResourceDefinition[] {
@@ -20,9 +21,26 @@ export class FunctionResource implements Printable {
         path: "",
         resource: [
           {
-            dataSource: this.functionName,
             type: this.typeName,
             field: this.fieldName,
+            kind: "PIPELINE",
+            functions: [this.fieldName],
+          },
+        ],
+      },
+      {
+        location: `resources/appsync/${this.typeName}.${this.fieldName}.function.yml`,
+        path: "",
+        resource: [
+          {
+            dataSource: this.functionName,
+            name: this.fieldName,
+            request: `Invoke${
+              this.fieldName[0].toUpperCase() + this.fieldName.slice(1)
+            }.request.vtl`,
+            response: `Invoke${
+              this.fieldName[0].toUpperCase() + this.fieldName.slice(1)
+            }.response.vtl`,
           },
         ],
       },
@@ -37,6 +55,52 @@ export class FunctionResource implements Printable {
         resource: `
 $util.toJson($ctx.prev.result)
         `,
+      },
+      {
+        location: `mapping-templates/Invoke${
+          this.fieldName[0].toUpperCase() + this.fieldName.slice(1)
+        }.request.vtl`,
+        path: "",
+        resource: `
+{
+  "version": "2018-05-29",
+  "operation": "Invoke",
+  "payload": {
+      "typeName": "$ctx.stash.get("typeName")",
+      "fieldName": "$ctx.stash.get("fieldName")",
+      "arguments": $util.toJson($ctx.arguments),
+      "identity": $util.toJson($ctx.identity),
+      "source": $util.toJson($ctx.source),
+      "request": $util.toJson($ctx.request),
+      "prev": $util.toJson($ctx.prev)
+  }
+}
+## [End] Invoke AWS Lambda data source. **
+        
+        `,
+      },
+      {
+        location: `mapping-templates/Invoke${
+          this.fieldName[0].toUpperCase() + this.fieldName.slice(1)
+        }.response.vtl`,
+        path: "",
+        resource: `
+## [Start] Handle error or return result. **
+#if( $ctx.error )
+  $util.error($ctx.error.message, $ctx.error.type)
+#end
+$util.toJson($ctx.result)
+## [End] Handle error or return result. **
+        `,
+      },
+      {
+        location: `schema/${args["in-schema"]}`,
+        path: DiggerUtils.removeFieldDirective(
+          this.typeName,
+          this.fieldName,
+          "function"
+        ),
+        resource: {},
       },
     ];
   }

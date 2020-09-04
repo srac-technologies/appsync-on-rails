@@ -1,9 +1,9 @@
 import {
   ASTNode,
   FieldDefinitionNode,
-
   InputObjectTypeDefinitionNode,
-  InputValueDefinitionNode, TypeDefinitionNode
+  InputValueDefinitionNode,
+  TypeDefinitionNode,
 } from "graphql";
 import { TransformContext } from "../../interfaces/context/TransformContext";
 import { DirectiveArg, IDirective } from "../../interfaces/directive/Directive";
@@ -35,11 +35,17 @@ export class ConnectionDirective implements IDirective {
     }
     const parent = <TypeDefinitionNode>context.parent().node;
     TableResource.table(parent.name.value)?.hasConnection({
-      hasMany: node.type.kind === "ListType" || (node.type.kind === "NonNullType" && node.type.type.kind === "ListType"),
-      name: args.find(a => a.name === 'name')?.value as string || '',
+      hasMany:
+        node.type.kind === "ListType" ||
+        (node.type.kind === "NonNullType" &&
+          node.type.type.kind === "ListType"),
+      name: (args.find((a) => a.name === "name")?.value as string) || "",
       with: getType(node).value,
-      foreignKey: args.find(a => a.name === 'foreignKey')?.value as string || undefined
-    })
+      foreignKey:
+        (args.find((a) => a.name === "foreignKey")?.value as string) ||
+        undefined,
+      node: node,
+    });
   }
 }
 

@@ -5,18 +5,20 @@ import { ResourceDefinition } from "../interfaces/resource/IResource";
 import { FsProxy } from "./FsProxy";
 
 export class ResourceHandler {
-  constructor(private resources: ResourceDefinition[], private basePath: string) { }
+  constructor(
+    private resources: ResourceDefinition[],
+    private basePath: string
+  ) {}
 
   print() {
     // group order
-    const resources = this.resources
-      .reduce(
-        (res: { [path: string]: ResourceDefinition[] }, elem) => ({
-          ...res,
-          [elem.location]: [...(res[elem.location] || []), elem],
-        }),
-        {}
-      );
+    const resources = this.resources.reduce(
+      (res: { [path: string]: ResourceDefinition[] }, elem) => ({
+        ...res,
+        [elem.location]: [...(res[elem.location] || []), elem],
+      }),
+      {}
+    );
 
     return Object.entries(resources).map(([p, defs]) => {
       if (path.extname(p) === ".yml") {
@@ -40,36 +42,38 @@ export class ResourceHandler {
   }
 
   resolveSchema(filePath: string, definitions: ResourceDefinition[]) {
-    console.log(filePath)
-    return definitions.reduce((res, def) => {
-      console.log(res, def.resource)
-      if (!def.path) {
-        try {
-          return typeof def.resource === "string"
-            ? parse(def.resource)
-            : def.resource;
-        } catch (e) {
-          console.trace(def.resource);
-          throw e;
+    return definitions.reduce(
+      (res, def) => {
+        console.log(res, def.resource);
+        if (!def.path) {
+          try {
+            return typeof def.resource === "string"
+              ? parse(def.resource)
+              : def.resource;
+          } catch (e) {
+            console.trace(def.resource);
+            throw e;
+          }
         }
+        if (typeof def.path === "string") {
+          return res;
+        }
+        return def.path(res)(def.resource);
+      },
+      <DocumentNode>{
+        kind: "Document",
+        definitions: [],
       }
-      if (typeof def.path === "string") {
-        return res;
-      }
-      return def.path(res)(def.resource);
-    }, <DocumentNode>{
-      kind: "Document",
-      definitions: []
-    });
+    );
   }
 
   resolveYaml(filePath: string, definitions: ResourceDefinition[]) {
     const orig = FsProxy.instance.existsSync(path.join(this.basePath, filePath))
       ? yaml.parse(
-        FsProxy.instance.readFileSync(path.join(this.basePath, filePath), {
-          encoding: "utf-8",
-        })
-      )
+          FsProxy.instance.readFileSync(path.join(this.basePath, filePath), {
+            encoding: "utf-8",
+          })
+        )
       : {};
     return yaml.stringify(
       definitions.reduce((res, def) => {
@@ -79,30 +83,30 @@ export class ResourceHandler {
         const digger: (parent: any) => (value: any) => any =
           typeof def.path === "string"
             ? (parent: any) => {
-              const lastOne = (<string>def.path)
-                .split("#")
-                .slice(0, -1)
-                .reduce((from, loc) => {
-                  if (loc in from) {
+                const lastOne = (<string>def.path)
+                  .split("#")
+                  .slice(0, -1)
+                  .reduce((from, loc) => {
+                    if (loc in from) {
+                      return from[loc];
+                    }
+                    from[loc] = {};
                     return from[loc];
+                  }, parent);
+                const lastPath = (<string>def.path).split("#").pop();
+                return (value: any) => {
+                  if (
+                    lastPath &&
+                    lastPath in lastOne &&
+                    lastOne[lastPath].length
+                  ) {
+                    lastOne[lastPath].push(value);
+                    return parent;
                   }
-                  from[loc] = {};
-                  return from[loc];
-                }, parent);
-              const lastPath = (<string>def.path).split("#").pop();
-              return (value: any) => {
-                if (
-                  lastPath &&
-                  lastPath in lastOne &&
-                  lastOne[lastPath].length
-                ) {
-                  lastOne[lastPath].push(value);
+                  lastPath && (lastOne[lastPath] = value);
                   return parent;
-                }
-                lastPath && (lastOne[lastPath] = value);
-                return parent;
-              };
-            }
+                };
+              }
             : def.path;
         return digger(res)(def.resource);
       }, orig),
