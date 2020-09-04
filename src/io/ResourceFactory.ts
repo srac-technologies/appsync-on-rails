@@ -1,14 +1,11 @@
 import {
-  parse,
-  TypeSystemDefinitionNode,
   DocumentNode,
   FieldDefinitionNode,
-  InputValueDefinitionNode,
+  InputValueDefinitionNode, parse
 } from "graphql";
-import { IResource } from "../interfaces/resource/IResource";
-import { IDirective } from "../interfaces/directive/Directive";
 import directives from "../directives";
 import { TransformContext } from "../interfaces/context/TransformContext";
+import { IDirective } from "../interfaces/directive/Directive";
 
 export class ResourceFactory {
   node: DocumentNode;
@@ -18,9 +15,7 @@ export class ResourceFactory {
     this.directives = directives.map((ctor) => new ctor());
   }
 
-  doWalk(): IResource[] | false {
-    const result: IResource[] = [];
-
+  doWalk() {
     this.node.definitions.forEach((type) => {
       if (
         type.kind === "ObjectTypeDefinition" ||
@@ -38,13 +33,12 @@ export class ResourceFactory {
                 d.name.value,
                 d.arguments?.map((a) => ({
                   name: a.name.value,
-                  value: a.value.kind === "StringValue" ? a.value.value : "",
+                  value: a.value.kind === "StringValue" ? a.value.value : a.value.kind === 'ListValue' && a.value.values.map(v => v.kind === 'StringValue' && v.value) as string[] || "",
                 })) || [],
                 type,
                 typeContext
               )
             )
-            .forEach((arr) => arr && result.push(...arr));
         });
         // field handling
         (type.fields || []).forEach(
@@ -63,13 +57,10 @@ export class ResourceFactory {
                     new TransformContext(f, () => typeContext)
                   )
                 )
-                .forEach((arr) => arr && result.push(...arr))
             )
         );
         return;
       }
     });
-
-    return result.length > 0 && result;
   }
 }

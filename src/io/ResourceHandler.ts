@@ -1,32 +1,24 @@
 import { DocumentNode, parse, print } from "graphql";
 import path from "path";
 import yaml from "yamljs";
-import {
-  IResource,
-  ResourceDefinition,
-} from "../interfaces/resource/IResource";
+import { ResourceDefinition } from "../interfaces/resource/IResource";
 import { FsProxy } from "./FsProxy";
 
 export class ResourceHandler {
-  constructor(private resources: IResource[], private basePath: string) {}
+  constructor(
+    private resources: ResourceDefinition[],
+    private basePath: string
+  ) {}
 
   print() {
     // group order
-    const resources = this.resources
-      .reduce(
-        (res: ResourceDefinition[], elem) => [
-          ...res,
-          ...elem.outputResourceDefinition(),
-        ],
-        []
-      )
-      .reduce(
-        (res: { [path: string]: ResourceDefinition[] }, elem) => ({
-          ...res,
-          [elem.location]: [...(res[elem.location] || []), elem],
-        }),
-        {}
-      );
+    const resources = this.resources.reduce(
+      (res: { [path: string]: ResourceDefinition[] }, elem) => ({
+        ...res,
+        [elem.location]: [...(res[elem.location] || []), elem],
+      }),
+      {}
+    );
 
     return Object.entries(resources).map(([p, defs]) => {
       if (path.extname(p) === ".yml") {
@@ -50,21 +42,9 @@ export class ResourceHandler {
   }
 
   resolveSchema(filePath: string, definitions: ResourceDefinition[]) {
-    try {
-      const orig: DocumentNode = FsProxy.instance.existsSync(
-        path.join(this.basePath, filePath)
-      )
-        ? parse(
-            FsProxy.instance.readFileSync(path.join(this.basePath, filePath), {
-              encoding: "utf-8",
-            })
-          )
-        : {
-            definitions: [],
-            kind: "Document",
-          };
-
-      return definitions.reduce((res, def) => {
+    return definitions.reduce(
+      (res, def) => {
+        console.log(res, def.resource);
         if (!def.path) {
           try {
             return typeof def.resource === "string"
@@ -79,15 +59,12 @@ export class ResourceHandler {
           return res;
         }
         return def.path(res)(def.resource);
-      }, orig);
-    } catch (e) {
-      console.trace(
-        FsProxy.instance.readFileSync(path.join(this.basePath, filePath), {
-          encoding: "utf-8",
-        })
-      );
-      throw e;
-    }
+      },
+      <DocumentNode>{
+        kind: "Document",
+        definitions: [],
+      }
+    );
   }
 
   resolveYaml(filePath: string, definitions: ResourceDefinition[]) {
