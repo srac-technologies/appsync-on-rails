@@ -6,6 +6,8 @@ import {
   TypeNode,
   InputObjectTypeDefinitionNode,
   InputValueDefinitionNode,
+  DirectiveDefinitionNode,
+  DirectiveNode,
 } from "graphql";
 import { type } from "os";
 
@@ -25,6 +27,51 @@ export namespace DiggerUtils {
           definitions: [
             ...filtered.slice(0, preservedOrder),
             value,
+            ...filtered.slice(preservedOrder),
+          ],
+        };
+      };
+    };
+  };
+  export const addObjectDirectives = (
+    typeName: string,
+    directiveName: string[]
+  ) => {
+    return (inp: DocumentNode) => {
+      return () => {
+        const preservedOrder = inp.definitions.findIndex(
+          (d) => d.kind === "ObjectTypeDefinition" && d.name.value === typeName
+        );
+        if (preservedOrder < 0) {
+          console.log(
+            typeName,
+            inp.definitions.map((d: any) => d["name"]["value"])
+          );
+        }
+        const filtered = inp.definitions.filter(
+          (d) =>
+            !(d.kind === "ObjectTypeDefinition" && d.name.value === typeName)
+        );
+        return {
+          ...inp,
+          definitions: [
+            ...filtered.slice(0, preservedOrder),
+            {
+              ...inp.definitions[preservedOrder],
+              directives: [
+                ...(
+                  (<ObjectTypeDefinitionNode>inp.definitions[preservedOrder])
+                    .directives || []
+                ).filter((d) => directiveName.includes(d.name.value)), // make it idemponent
+                ...directiveName.map(d => (<DirectiveNode>{
+                  kind: "Directive",
+                  name: {
+                    kind: "Name",
+                    value: d
+                  },
+                }))
+              ],
+            },
             ...filtered.slice(preservedOrder),
           ],
         };
@@ -211,6 +258,68 @@ export namespace DiggerUtils {
       };
     };
   };
+  export const addFieldDirective = (
+    typeName: string,
+    fieldName: string,
+    directiveName: string
+  ) => {
+    return (inp: DocumentNode) => {
+      return () => {
+        const preservedOrder = inp.definitions.findIndex(
+          (d) =>
+            (d.kind === "ObjectTypeDefinition" ||
+              d.kind === "InputObjectTypeDefinition") &&
+            d.name.value === typeName
+        );
+        const filtered = inp.definitions.filter(
+          (d) =>
+            !(
+              (d.kind === "ObjectTypeDefinition" ||
+                d.kind === "InputObjectTypeDefinition") &&
+              d.name.value === typeName
+            )
+        );
+        const fields =
+          (<ObjectTypeDefinitionNode>inp.definitions[preservedOrder]).fields ||
+          [];
+        const preservedFieldOrder = fields.findIndex(
+          (f) => f.name.value === fieldName
+        );
+        const fileteredFields = fields.filter(
+          (f) => f.name.value !== fieldName
+        );
+        return {
+          ...inp,
+          definitions: [
+            ...filtered.slice(0, preservedOrder),
+            {
+              ...inp.definitions[preservedOrder],
+              fields: [
+                ...fileteredFields.slice(0, preservedFieldOrder),
+                <FieldDefinitionNode | InputValueDefinitionNode>{
+                  ...fields[preservedFieldOrder],
+                  directives: [
+                    ...(fields[preservedFieldOrder].directives || []).filter(
+                      (d) => d.name.value !== directiveName
+                    ), // make it idemponent
+                    {
+                      kind: "Directive",
+                      name: {
+                        kind: "Name",
+                        value: directiveName
+                      }
+                    }
+                  ],
+                },
+                ...fileteredFields.slice(preservedFieldOrder),
+              ],
+            },
+            ...filtered.slice(preservedOrder),
+          ],
+        };
+      };
+    };
+  };
   export const updateFieldTypeName = (
     typeName: string,
     fieldName: string,
@@ -283,19 +392,8 @@ export const typeEasy = (type: EasyFieldType): TypeNode => {
 
   return type.required
     ? {
-        kind: "NonNullType",
-        type: {
-          kind: "ListType",
-          type: {
-            kind: "NamedType",
-            name: {
-              kind: "Name",
-              value: type.baseTypeName,
-            },
-          },
-        },
-      }
-    : {
+      kind: "NonNullType",
+      type: {
         kind: "ListType",
         type: {
           kind: "NamedType",
@@ -304,7 +402,18 @@ export const typeEasy = (type: EasyFieldType): TypeNode => {
             value: type.baseTypeName,
           },
         },
-      };
+      },
+    }
+    : {
+      kind: "ListType",
+      type: {
+        kind: "NamedType",
+        name: {
+          kind: "Name",
+          value: type.baseTypeName,
+        },
+      },
+    };
 };
 
 export const unTypeEasy = (type: FieldDefinitionNode) => {
