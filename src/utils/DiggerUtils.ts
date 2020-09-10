@@ -62,8 +62,8 @@ export namespace DiggerUtils {
                 ...(
                   (<ObjectTypeDefinitionNode>inp.definitions[preservedOrder])
                     .directives || []
-                ).filter((d) => directiveName.includes(d.name.value)), // make it idemponent
-                ...directiveName.map(d => (<DirectiveNode>{
+                ).filter((d) => !directiveName.includes(d.name.value)), // make it idemponent
+                ...directiveName.filter((d, i, a) => a.indexOf(d) === i).map(d => (<DirectiveNode>{
                   kind: "Directive",
                   name: {
                     kind: "Name",

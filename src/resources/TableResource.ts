@@ -507,7 +507,7 @@ const buildGSIs = (
           AttributeName: k,
           AttributeType: "S",
         })),
-      ],
+      ].filter((k, i, a) => a.map(ak => ak.AttributeName).indexOf(k.AttributeName) === i),
       GlobalSecondaryIndexes: [
         ...keys
           .filter((k) => k.name)
@@ -691,7 +691,7 @@ input Model${typeName}${keySpec.name}CompositeKeyInput {
 };
 
 const buildAuthDirectives = (authSpec: AuthSpec[], action: ActionType) => {
-  return authSpec.filter(spec => spec.actions.includes(action)).map(buildAuthDirective).map(s => '@' + s).join(' ')
+  return authSpec.filter(spec => spec.actions.includes(action)).map(buildAuthDirective).filter((d, i, a) => a.indexOf(d) === i).map(s => '@' + s).join(' ')
 }
 
 const buildAuthDirectiveNames = (authSpec: AuthSpec[]) => {
@@ -1311,7 +1311,7 @@ ${ownerAuthorization(authSpecs)}
   #end
   ## [End] If not static group authorized, filter items **
 ## [End] Check authMode and execute owner/group checks **
-
+#end
 `
 }
 
