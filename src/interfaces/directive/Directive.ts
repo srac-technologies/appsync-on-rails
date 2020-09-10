@@ -3,7 +3,7 @@ import { TransformContext } from "../context/TransformContext";
 
 export type DirectiveArg = {
   name: string;
-  value: string | string[];
+  value: string | string[] | any;
 };
 export interface IDirective {
   next(

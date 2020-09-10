@@ -24,6 +24,42 @@ export type ConnectionSpec = {
   node: FieldDefinitionNode;
 };
 
+
+export type AuthOwnerStrategySpec = {
+  type: "OWNER"
+  ownerField: string
+  identityClaim?: string
+}
+
+export type AuthGroupStrategySpec = {
+  type: "GROUP"
+  groups: string[]
+  groupClaim?: string
+}
+
+export type AuthStrategySpec = AuthOwnerStrategySpec | AuthGroupStrategySpec
+
+export type ActionType = ('create' | 'update' | 'read' | 'delete')
+
+export type AuthUserPoolsSpec = {
+  provider: "AMAZON_COGNITO_USER_POOLS"
+  strategy: AuthStrategySpec
+}
+
+export type AuthKeySpec = {
+  provider: 'API_KEY'
+}
+export type AuthIamSpec = {
+  provider: 'AWS_IAM'
+}
+
+export type AuthBaseSpec = {
+  actions: ActionType[]
+}
+
+export type AuthSpec = (AuthUserPoolsSpec | AuthKeySpec | AuthIamSpec) & AuthBaseSpec
+
+
 export class TableResource implements Printable {
   get primaryKey() {
     return this.keys.find((k) => !k.name) || { fields: ["id"] };
@@ -40,6 +76,16 @@ export class TableResource implements Printable {
   hasMany_: ConnectionSpec[] = [];
   hasOne_: ConnectionSpec[] = [];
   belongsTo_: ConnectionSpec[] = [];
+
+  authSpec: {
+    self: AuthSpec[],
+    fields: {
+      [fieldName: string]: AuthSpec[]
+    }
+  } = {
+      self: [],
+      fields: {}
+    }
 
   constructor(
     private tableName: string,
@@ -80,8 +126,16 @@ export class TableResource implements Printable {
     this.keys.push(key);
   }
 
+  addAuth(spec: AuthSpec, on?: FieldDefinitionNode) {
+    if (!on) {
+      this.authSpec.self.push(spec)
+      return
+    }
+    this.authSpec.fields[on.name.value] = [...(this.authSpec.fields[on.name.value] || []), spec]
+  }
+
   print() {
-    console.log(this);
+    // console.log(this);
     return [...this.printPersistanceLayer(), ...this.printGraphqlLayer()];
   }
 
@@ -186,7 +240,7 @@ export class TableResource implements Printable {
       {
         location: `mapping-templates/Mutation.update${this.tableName}.request.vtl`,
         path: "",
-        resource: buildUpdateReq(this.tableName, this.primaryKey),
+        resource: buildUpdateReq(this.tableName, this.primaryKey, this.authSpec.self),
       },
       {
         location: `mapping-templates/Mutation.delete${this.tableName}.request.vtl`,
@@ -196,12 +250,12 @@ export class TableResource implements Printable {
       {
         location: `mapping-templates/Query.get${this.tableName}.response.vtl`,
         path: "",
-        resource: buildGetRes(),
+        resource: buildGetRes(this.authSpec.self),
       },
       {
         location: `mapping-templates/Query.list${this.tableName}s.response.vtl`,
         path: "",
-        resource: buildListRes(),
+        resource: buildListRes(this.authSpec.self),
       },
       {
         location: `mapping-templates/Mutation.create${this.tableName}.response.vtl`,
@@ -226,7 +280,8 @@ export class TableResource implements Printable {
           this.primaryKey,
           this.typeNode,
           this.keys.filter((k) => k.name),
-          this.connections
+          this.connections,
+          this.authSpec.self
         ),
       },
       {
@@ -237,6 +292,16 @@ export class TableResource implements Printable {
       {
         location: `schema/${args["in-schema"]}`,
         path: DiggerUtils.removeObjectDirective(this.tableName, "key"),
+        resource: {},
+      },
+      {
+        location: `schema/${args["in-schema"]}`,
+        path: DiggerUtils.removeObjectDirective(this.tableName, "auth"),
+        resource: {},
+      },
+      {
+        location: `schema/${args["in-schema"]}`,
+        path: DiggerUtils.addObjectDirectives(this.tableName, buildAuthDirectiveNames(this.authSpec.self)),
         resource: {},
       },
       ...this.connections.map((c) => ({
@@ -264,28 +329,32 @@ export class TableResource implements Printable {
         path: "",
         resource: c.hasMany
           ? buildHasMany(
-              TableResource.table(c.with)?.primaryKey.fields[0] || "",
-              getForeignKey(c, this.tableName),
-              c.name
-            )[0]
+            TableResource.table(c.with)?.primaryKey.fields[0] || "",
+            getForeignKey(c, this.tableName),
+            c.name,
+            c.with
+          )[0]
           : buildHasOne(
-              TableResource.table(c.with)?.primaryKey.fields[0] || "",
-              getForeignKey(c, this.tableName)
-            )[0],
+            TableResource.table(c.with)?.primaryKey.fields[0] || "",
+            getForeignKey(c, this.tableName),
+            c.with
+          )[0],
       })),
       ...this.connections.map((c) => ({
         location: `mapping-templates/${this.tableName}.${c.node.name.value}.response.vtl`,
         path: "",
         resource: c.hasMany
           ? buildHasMany(
-              TableResource.table(c.with)?.primaryKey.fields[0] || "",
-              getForeignKey(c, this.tableName),
-              c.name
-            )[1]
+            TableResource.table(c.with)?.primaryKey.fields[0] || "",
+            getForeignKey(c, this.tableName),
+            c.name,
+            c.with
+          )[1]
           : buildHasOne(
-              TableResource.table(c.with)?.primaryKey.fields[0] || "",
-              getForeignKey(c, this.tableName)
-            )[1],
+            TableResource.table(c.with)?.primaryKey.fields[0] || "",
+            getForeignKey(c, this.tableName),
+            c.with
+          )[1],
       })),
       ...this.connections.map((c) => ({
         location: `schema/${args["in-schema"]}`,
@@ -307,53 +376,53 @@ export class TableResource implements Printable {
             })(),
             arguments: c.hasMany
               ? [
-                  {
-                    kind: "InputValueDefinition",
-                    name: { value: "filter", kind: "Name" },
-                    type: {
-                      kind: "NamedType",
-                      name: {
-                        value: `Model${
-                          unTypeEasy(c.node).baseTypeName
+                {
+                  kind: "InputValueDefinition",
+                  name: { value: "filter", kind: "Name" },
+                  type: {
+                    kind: "NamedType",
+                    name: {
+                      value: `Model${
+                        unTypeEasy(c.node).baseTypeName
                         }FilterInput`,
-                        kind: "Name",
-                      },
+                      kind: "Name",
                     },
                   },
-                  {
-                    kind: "InputValueDefinition",
-                    name: { value: "sortDirection", kind: "Name" },
-                    type: {
-                      kind: "NamedType",
-                      name: {
-                        value: "ModelSortDirection",
-                        kind: "Name",
-                      },
+                },
+                {
+                  kind: "InputValueDefinition",
+                  name: { value: "sortDirection", kind: "Name" },
+                  type: {
+                    kind: "NamedType",
+                    name: {
+                      value: "ModelSortDirection",
+                      kind: "Name",
                     },
                   },
-                  {
-                    kind: "InputValueDefinition",
-                    name: { value: "limit", kind: "Name" },
-                    type: {
-                      kind: "NamedType",
-                      name: {
-                        value: "Int",
-                        kind: "Name",
-                      },
+                },
+                {
+                  kind: "InputValueDefinition",
+                  name: { value: "limit", kind: "Name" },
+                  type: {
+                    kind: "NamedType",
+                    name: {
+                      value: "Int",
+                      kind: "Name",
                     },
                   },
-                  {
-                    kind: "InputValueDefinition",
-                    name: { value: "nextToken", kind: "Name" },
-                    type: {
-                      kind: "NamedType",
-                      name: {
-                        value: "String",
-                        kind: "Name",
-                      },
+                },
+                {
+                  kind: "InputValueDefinition",
+                  name: { value: "nextToken", kind: "Name" },
+                  type: {
+                    kind: "NamedType",
+                    name: {
+                      value: "String",
+                      kind: "Name",
                     },
                   },
-                ]
+                },
+              ]
               : [],
           })
         ),
@@ -381,7 +450,7 @@ export class TableResource implements Printable {
           {
             location: `mapping-templates/Query.${k.queryField}.response.vtl`,
             path: "",
-            resource: buildListRes(),
+            resource: buildListRes(this.authSpec.self),
           },
           {
             location: `schema/${this.tableName}.${k.queryField}.graphql`,
@@ -391,6 +460,13 @@ export class TableResource implements Printable {
         ])
         .reduce((res, elem) => [...res, ...elem], []),
     ];
+  }
+
+  public protectListRes() {
+    return buildAuthListRes(this.authSpec.self)
+  }
+  public protectGetRes() {
+    return buildGetAuthRes(this.authSpec.self)
   }
 }
 
@@ -568,30 +644,30 @@ const buildSafePrimaryKeys = (spec: KeySpec) => {
   return [
     spec.fields[0],
     spec.fields[1] +
-      spec.fields
-        .slice(2)
-        .map((f) => f[0].toUpperCase() + f.slice(1))
-        .join(""),
+    spec.fields
+      .slice(2)
+      .map((f) => f[0].toUpperCase() + f.slice(1))
+      .join(""),
   ].filter((a) => !!a);
 };
 
-const buildSortKeyQueryOperations = (typeName: string, keySpecs: KeySpec[]) => {
+const buildSortKeyQueryOperations = (typeName: string, keySpecs: KeySpec[], authSpec: AuthSpec[]) => {
   return keySpecs.map((keySpec) => ({
     query: `
   ${keySpec.queryField}(${(() => {
-      if (keySpec.fields.length === 1) {
-        return `${keySpec.fields[0]}: String`;
-      }
-      if (keySpec.fields.length === 2) {
-        return `${keySpec.fields[0]}: String,  ${keySpec.fields[1]}: ModelStringConditionInput`;
-      }
-      return `${keySpec.fields[0]}: String,  ${
-        keySpec.fields[1]
-      }${keySpec.fields
-        .slice(2)
-        .map((f) => f[0].toUpperCase() + f.slice(1))
-        .join("")}: Model${typeName}${keySpec.name}CompositeKeyConditionInput`;
-    })()}, sortDirection:ModelSortDirection, filter: Model${typeName}FilterInput, limit: Int, nextToken: String): Model${typeName}Connection 
+        if (keySpec.fields.length === 1) {
+          return `${keySpec.fields[0]}: String`;
+        }
+        if (keySpec.fields.length === 2) {
+          return `${keySpec.fields[0]}: String,  ${keySpec.fields[1]}: ModelStringConditionInput`;
+        }
+        return `${keySpec.fields[0]}: String,  ${
+          keySpec.fields[1]
+          }${keySpec.fields
+            .slice(2)
+            .map((f) => f[0].toUpperCase() + f.slice(1))
+            .join("")}: Model${typeName}${keySpec.name}CompositeKeyConditionInput`;
+      })()}, sortDirection:ModelSortDirection, filter: Model${typeName}FilterInput, limit: Int, nextToken: String): Model${typeName}Connection ${buildAuthDirectives(authSpec, 'read')}
  `,
     inputs: `
 input Model${typeName}${keySpec.name}CompositeKeyConditionInput {
@@ -606,266 +682,289 @@ input Model${typeName}${keySpec.name}CompositeKeyConditionInput {
 
 input Model${typeName}${keySpec.name}CompositeKeyInput {
   ${keySpec.fields
-    .slice(1)
-    .map((f) => `${f}: String`)
-    .join("\n")}
+        .slice(1)
+        .map((f) => `${f}: String`)
+        .join("\n")}
 }
 `,
   }));
 };
+
+const buildAuthDirectives = (authSpec: AuthSpec[], action: ActionType) => {
+  return authSpec.filter(spec => spec.actions.includes(action)).map(buildAuthDirective).map(s => '@' + s).join(' ')
+}
+
+const buildAuthDirectiveNames = (authSpec: AuthSpec[]) => {
+  return authSpec.map(buildAuthDirective)
+}
+
+const buildAuthDirective = (authSpec: AuthSpec) => {
+  switch (authSpec.provider) {
+    case 'AMAZON_COGNITO_USER_POOLS':
+    default:
+      return 'aws_cognito_user_pools'
+    case 'API_KEY':
+      return 'aws_api_key'
+    case 'AWS_IAM':
+      return 'aws_iam'
+  }
+}
 
 const buildCrudOperations = (
   typeName: string,
   primaryKey: KeySpec,
   typeNode: ObjectTypeDefinitionNode,
   sortKeys: KeySpec[],
-  connections: ConnectionSpec[]
+  connections: ConnectionSpec[],
+  authSpec: AuthSpec[]
 ) => {
-  const keyOperations = buildSortKeyQueryOperations(typeName, sortKeys);
+  const keyOperations = buildSortKeyQueryOperations(typeName, sortKeys, authSpec);
   return `
  extend type Query {
   get${typeName}(${buildSafePrimaryKeys(primaryKey)
-    .map((k) => `${k}: ID!`)
-    .join(",")}): ${typeName} 
-  list${typeName}s(filter: Model${typeName}FilterInput, limit: Int, nextToken: String): Model${typeName}Connection 
-  ${keyOperations.map((o) => o.query).join("\n")}
+      .map((k) => `${k}: ID!`)
+      .join(",")}): ${typeName} ${buildAuthDirectives(authSpec, 'read')}
+  list${typeName}s(filter: Model${typeName}FilterInput, limit: Int, nextToken: String): Model${typeName}Connection ${buildAuthDirectives(authSpec, 'read')}
+  ${keyOperations.map((o) => o.query).join("\n")} 
  }
  extend type Mutation {
-  create${typeName}(input: Create${typeName}Input!, condition: Model${typeName}ConditionInput): ${typeName}
-  update${typeName}(input: Update${typeName}Input!, condition: Model${typeName}ConditionInput): ${typeName}
-  delete${typeName}(input: Delete${typeName}Input!, condition: Model${typeName}ConditionInput): ${typeName}
+  create${typeName}(input: Create${typeName}Input!, condition: Model${typeName}ConditionInput): ${typeName} ${buildAuthDirectives(authSpec, 'create')}
+  update${typeName}(input: Update${typeName}Input!, condition: Model${typeName}ConditionInput): ${typeName} ${buildAuthDirectives(authSpec, 'update')}
+  delete${typeName}(input: Delete${typeName}Input!, condition: Model${typeName}ConditionInput): ${typeName} ${buildAuthDirectives(authSpec, 'delete')}
  }
- type Model${typeName}Connection {
+ type Model${typeName}Connection 
+ ${buildAuthDirectives(authSpec, 'read')}
+ {
    items: [${typeName}]
    nextToken: String
  }
  ${print({
-   kind: "InputObjectTypeDefinition",
-   name: {
-     kind: "Name",
-     value: `Model${typeName}ConditionInput`,
-   },
-   fields: [
-     ...(typeNode.fields || [])
-       .filter(
-         (f) =>
-           !connections.some(
-             (c) => c.node.name.value === f.name.value && c.hasMany
-           )
-       )
-       .map((f) => makeTypeModelInput(typeName, f, connections)),
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: { kind: "Name", value: "and" },
-       type: {
-         kind: "ListType",
-         type: {
-           kind: "NamedType",
-           name: { kind: "Name", value: `Model${typeName}ConditionInput` },
-         },
-       },
-     },
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: { kind: "Name", value: "or" },
-       type: {
-         kind: "ListType",
-         type: {
-           kind: "NamedType",
-           name: { kind: "Name", value: `Model${typeName}ConditionInput` },
-         },
-       },
-     },
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: {
-         kind: "Name",
-         value: "not",
-       },
-       type: {
-         kind: "NamedType",
-         name: { kind: "Name", value: `Model${typeName}ConditionInput` },
-       },
-     },
-   ],
- })}
+        kind: "InputObjectTypeDefinition",
+        name: {
+          kind: "Name",
+          value: `Model${typeName}ConditionInput`,
+        },
+        fields: [
+          ...(typeNode.fields || [])
+            .filter(
+              (f) =>
+                !connections.some(
+                  (c) => c.node.name.value === f.name.value && c.hasMany
+                )
+            )
+            .map((f) => makeTypeModelInput(typeName, f, connections)),
+          {
+            kind: Kind.INPUT_VALUE_DEFINITION,
+            name: { kind: "Name", value: "and" },
+            type: {
+              kind: "ListType",
+              type: {
+                kind: "NamedType",
+                name: { kind: "Name", value: `Model${typeName}ConditionInput` },
+              },
+            },
+          },
+          {
+            kind: Kind.INPUT_VALUE_DEFINITION,
+            name: { kind: "Name", value: "or" },
+            type: {
+              kind: "ListType",
+              type: {
+                kind: "NamedType",
+                name: { kind: "Name", value: `Model${typeName}ConditionInput` },
+              },
+            },
+          },
+          {
+            kind: Kind.INPUT_VALUE_DEFINITION,
+            name: {
+              kind: "Name",
+              value: "not",
+            },
+            type: {
+              kind: "NamedType",
+              name: { kind: "Name", value: `Model${typeName}ConditionInput` },
+            },
+          },
+        ],
+      })}
  ${print({
-   kind: "InputObjectTypeDefinition",
-   name: {
-     kind: "Name",
-     value: `Model${typeName}FilterInput`,
-   },
-   fields: [
-     ...(typeNode.fields || [])
-       .filter(
-         (f) =>
-           !connections.some(
-             (c) => c.node.name.value === f.name.value && c.hasMany
-           )
-       )
+        kind: "InputObjectTypeDefinition",
+        name: {
+          kind: "Name",
+          value: `Model${typeName}FilterInput`,
+        },
+        fields: [
+          ...(typeNode.fields || [])
+            .filter(
+              (f) =>
+                !connections.some(
+                  (c) => c.node.name.value === f.name.value && c.hasMany
+                )
+            )
 
-       .map((f) => makeTypeModelInput(typeName, f, connections)),
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: { kind: "Name", value: "and" },
-       type: {
-         kind: "ListType",
-         type: {
-           kind: "NamedType",
-           name: { kind: "Name", value: `Model${typeName}FilterInput` },
-         },
-       },
-     },
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: { kind: "Name", value: "or" },
-       type: {
-         kind: "ListType",
-         type: {
-           kind: "NamedType",
-           name: { kind: "Name", value: `Model${typeName}FilterInput` },
-         },
-       },
-     },
-     {
-       kind: Kind.INPUT_VALUE_DEFINITION,
-       name: {
-         kind: "Name",
-         value: "not",
-       },
-       type: {
-         kind: "NamedType",
-         name: { kind: "Name", value: `Model${typeName}FilterInput` },
-       },
-     },
-   ],
- })}
+            .map((f) => makeTypeModelInput(typeName, f, connections)),
+          {
+            kind: Kind.INPUT_VALUE_DEFINITION,
+            name: { kind: "Name", value: "and" },
+            type: {
+              kind: "ListType",
+              type: {
+                kind: "NamedType",
+                name: { kind: "Name", value: `Model${typeName}FilterInput` },
+              },
+            },
+          },
+          {
+            kind: Kind.INPUT_VALUE_DEFINITION,
+            name: { kind: "Name", value: "or" },
+            type: {
+              kind: "ListType",
+              type: {
+                kind: "NamedType",
+                name: { kind: "Name", value: `Model${typeName}FilterInput` },
+              },
+            },
+          },
+          {
+            kind: Kind.INPUT_VALUE_DEFINITION,
+            name: {
+              kind: "Name",
+              value: "not",
+            },
+            type: {
+              kind: "NamedType",
+              name: { kind: "Name", value: `Model${typeName}FilterInput` },
+            },
+          },
+        ],
+      })}
  ${print({
-   kind: "InputObjectTypeDefinition",
-   name: {
-     kind: "Name",
-     value: `Create${typeName}Input`,
-   },
-   fields: typeNode.fields
-     ?.filter(
-       (f) =>
-         !connections.some(
-           (c) => c.node.name.value === f.name.value && c.hasMany
-         )
-     )
-     .map((f) => {
-       const connection = connections.find(
-         (c) => c.node.name.value === f.name.value
-       );
-       return connection
-         ? {
-             ...f,
-             name: {
-               kind: "Name",
-               value: getForeignKey(connection, typeName),
-             },
-             type:
-               f.type.kind === "NonNullType"
-                 ? {
-                     kind: "NonNullType",
-                     type: {
-                       kind: "NamedType",
-                       name: {
-                         kind: "Name",
-                         value: "String",
-                       },
-                     },
-                   }
-                 : {
-                     kind: "NamedType",
-                     name: {
-                       kind: "Name",
-                       value: "String",
-                     },
-                   },
-             kind: "InputValueDefinition",
-             directives: (f.directives || []).filter(
-               (d) => d.name.value !== "connection"
-             ),
-           }
-         : {
-             ...f,
-             type:
-               f.type.kind === "NonNullType" &&
-               f.type.type.kind === "NamedType" &&
-               f.type.type.name.value === "ID"
-                 ? {
-                     kind: "NamedType",
-                     name: {
-                       kind: "Name",
-                       value: "ID",
-                     },
-                   }
-                 : f.type,
-             kind: "InputValueDefinition",
-             directives: (f.directives || []).filter(
-               (d) => d.name.value !== "connection"
-             ),
-           };
-     }),
- })}
+        kind: "InputObjectTypeDefinition",
+        name: {
+          kind: "Name",
+          value: `Create${typeName}Input`,
+        },
+        fields: typeNode.fields
+          ?.filter(
+            (f) =>
+              !connections.some(
+                (c) => c.node.name.value === f.name.value && c.hasMany
+              )
+          )
+          .map((f) => {
+            const connection = connections.find(
+              (c) => c.node.name.value === f.name.value
+            );
+            return connection
+              ? {
+                ...f,
+                name: {
+                  kind: "Name",
+                  value: getForeignKey(connection, typeName),
+                },
+                type:
+                  f.type.kind === "NonNullType"
+                    ? {
+                      kind: "NonNullType",
+                      type: {
+                        kind: "NamedType",
+                        name: {
+                          kind: "Name",
+                          value: "String",
+                        },
+                      },
+                    }
+                    : {
+                      kind: "NamedType",
+                      name: {
+                        kind: "Name",
+                        value: "String",
+                      },
+                    },
+                kind: "InputValueDefinition",
+                directives: (f.directives || []).filter(
+                  (d) => d.name.value !== "connection"
+                ),
+              }
+              : {
+                ...f,
+                type:
+                  f.type.kind === "NonNullType" &&
+                    f.type.type.kind === "NamedType" &&
+                    f.type.type.name.value === "ID"
+                    ? {
+                      kind: "NamedType",
+                      name: {
+                        kind: "Name",
+                        value: "ID",
+                      },
+                    }
+                    : f.type,
+                kind: "InputValueDefinition",
+                directives: (f.directives || []).filter(
+                  (d) => d.name.value !== "connection"
+                ),
+              };
+          }),
+      })}
  ${print({
-   kind: "InputObjectTypeDefinition",
-   name: {
-     kind: "Name",
-     value: `Update${typeName}Input`,
-   },
-   fields: typeNode.fields
-     ?.filter(
-       (f) =>
-         !connections.some(
-           (c) => c.node.name.value === f.name.value && c.hasMany
-         )
-     )
-     .map((f) => {
-       const connection = connections.find(
-         (c) => c.node.name.value === f.name.value
-       );
-       return connection
-         ? {
-             ...f,
-             name: {
-               kind: "Name",
-               value: getForeignKey(connection, typeName),
-             },
-             type:
-               f.type.kind === "NonNullType"
-                 ? {
-                     kind: "NonNullType",
-                     type: {
-                       kind: "NamedType",
-                       name: {
-                         kind: "Name",
-                         value: "String",
-                       },
-                     },
-                   }
-                 : {
-                     kind: "NamedType",
-                     name: {
-                       kind: "Name",
-                       value: "String",
-                     },
-                   },
-             kind: "InputValueDefinition",
-             directives: (f.directives || []).filter(
-               (d) => d.name.value !== "connection"
-             ),
-           }
-         : {
-             ...f,
-             kind: "InputValueDefinition",
-             directives: (f.directives || []).filter(
-               (d) => d.name.value !== "connection"
-             ),
-           };
-     }),
- })}
+        kind: "InputObjectTypeDefinition",
+        name: {
+          kind: "Name",
+          value: `Update${typeName}Input`,
+        },
+        fields: typeNode.fields
+          ?.filter(
+            (f) =>
+              !connections.some(
+                (c) => c.node.name.value === f.name.value && c.hasMany
+              )
+          )
+          .map((f) => {
+            const connection = connections.find(
+              (c) => c.node.name.value === f.name.value
+            );
+            return connection
+              ? {
+                ...f,
+                name: {
+                  kind: "Name",
+                  value: getForeignKey(connection, typeName),
+                },
+                type:
+                  f.type.kind === "NonNullType"
+                    ? {
+                      kind: "NonNullType",
+                      type: {
+                        kind: "NamedType",
+                        name: {
+                          kind: "Name",
+                          value: "String",
+                        },
+                      },
+                    }
+                    : {
+                      kind: "NamedType",
+                      name: {
+                        kind: "Name",
+                        value: "String",
+                      },
+                    },
+                kind: "InputValueDefinition",
+                directives: (f.directives || []).filter(
+                  (d) => d.name.value !== "connection"
+                ),
+              }
+              : {
+                ...f,
+                kind: "InputValueDefinition",
+                directives: (f.directives || []).filter(
+                  (d) => d.name.value !== "connection"
+                ),
+              };
+          }),
+      })}
  input Delete${typeName}Input {
     ${buildSafePrimaryKeys(primaryKey)
       .map((pk) => `${pk}: ID!`)
@@ -882,15 +981,16 @@ const buildGetReq = (primaryKey: KeySpec) => {
   "operation": "GetItem",
   "key": #if( $modelObjectKey ) $util.toJson($modelObjectKey) #else {
   ${primaryKey.fields
-    .map((f) => `"${f}": $util.dynamodb.toDynamoDBJson($ctx.args.${f})`)
-    .join(",")}
+      .map((f) => `"${f}": $util.dynamodb.toDynamoDBJson($ctx.args.${f})`)
+      .join(",")}
 } #end
 }
   `;
 };
 
-const buildGetRes = () => {
+const buildGetRes = (authSpecs: AuthSpec[]) => {
   return `
+  ${buildGetAuthRes(authSpecs)}
 $util.toJson($ctx.result)
   `;
 };
@@ -925,11 +1025,295 @@ $util.toJson($ListRequest)
   `;
 };
 
-const buildListRes = () => {
+const buildListRes = (authSpecs: AuthSpec[]) => {
   return `
+  ${buildAuthListRes(authSpecs)}
 $util.toJson($ctx.result)
   `;
 };
+
+const buildGetAuthRes = (authSpecs: AuthSpec[]) => {
+  const relatedAuth = authSpecs
+    .filter(a => a.actions.includes("read")).filter(a => a.provider === "AMAZON_COGNITO_USER_POOLS")
+  if (relatedAuth.length === 0) {
+    return ''
+  }
+
+  const staticGroupAuthorization = (s: AuthSpec[]) => {
+    return s.filter(spec => spec.provider === 'AMAZON_COGNITO_USER_POOLS' && spec.strategy.type === 'GROUP')
+      .map((spec: AuthSpec) => {
+        const strategy = (<AuthGroupStrategySpec>(<AuthUserPoolsSpec>spec).strategy)
+        return `
+  ## Authorization rule: { groups: ${strategy.groups.toString()}, groupClaim: "${strategy.groupClaim || 'cognito:groups'}" } **
+  #set( $userGroups = $util.defaultIfNull($ctx.identity.claims.get("${strategy.groupClaim || 'cognito:groups'}"), []) )
+  #set( $allowedGroups = [${strategy.groups.map(g => '"' + g + '"').join(',')}] )
+  #foreach( $userGroup in $userGroups )
+    #if( $allowedGroups.contains($userGroup) )
+      #set( $isStaticGroupAuthorized = true )
+      #break
+    #end
+  #end
+  `}).join('\n')
+  }
+
+
+  const ownerAuthorization = (s: AuthSpec[]) => {
+    return s.filter(spec => spec.provider === 'AMAZON_COGNITO_USER_POOLS' && spec.strategy.type === 'OWNER').map((spec, index) => {
+      const strategy = (<AuthOwnerStrategySpec>(<AuthUserPoolsSpec>spec).strategy)
+      return `
+  ## Authorization rule: { allow: owner, ownerField: "${strategy.ownerField}", identityClaim: "${strategy.identityClaim || 'cognito:username'}" } **
+  #set( $allowedOwners${index} = $ctx.result.${strategy.ownerField} )
+  #set( $identityValue = $util.defaultIfNull($ctx.identity.claims.get("username"), $util.defaultIfNull($ctx.identity.claims.get("${strategy.identityClaim || 'cognito:username'}"), "___xamznone____")) )
+  #if( $util.isList($allowedOwners${index}) )
+    #foreach( $allowedOwner in $allowedOwners${index} )
+      #if( $allowedOwner == $identityValue )
+        #set( $isOwnerAuthorized = true )
+      #end
+    #end
+  #end
+  #if( $util.isString($allowedOwners${index}) )
+    #if( $allowedOwners${index} == $identityValue )
+      #set( $isOwnerAuthorized = true )
+    #end
+  #end
+  `})
+  }
+  return `
+## [Start] Determine request authentication mode **
+#if( $util.isNullOrEmpty($authMode) && !$util.isNull($ctx.identity) && !$util.isNull($ctx.identity.sub) && !$util.isNull($ctx.identity.issuer) && !$util.isNull($ctx.identity.username) && !$util.isNull($ctx.identity.claims) && !$util.isNull($ctx.identity.sourceIp) && !$util.isNull($ctx.identity.defaultAuthStrategy) )
+  #set( $authMode = "userPools" )
+#end
+## [End] Determine request authentication mode **
+## [Start] Check authMode and execute owner/group checks **
+#if( $authMode == "userPools" )
+  ## [Start] Static Group Authorization Checks **
+  #set($isStaticGroupAuthorized = $util.defaultIfNull(
+            $isStaticGroupAuthorized, false))
+${staticGroupAuthorization(authSpecs)}
+  ## [End] Static Group Authorization Checks **
+  ## [Start] Owner Authorization Checks **
+  #set( $isOwnerAuthorized = $util.defaultIfNull($isOwnerAuthorized, false) )
+${ownerAuthorization(authSpecs)}
+  ## [End] Owner Authorization Checks **
+
+
+  ## [Start] Throw if unauthorized **
+  #if( !($isStaticGroupAuthorized == true || $isDynamicGroupAuthorized == true || $isOwnerAuthorized == true) )
+    $util.unauthorized()
+  #end
+  ## [End] Throw if unauthorized **
+#end
+## [End] Check authMode and execute owner/group checks **
+
+`
+}
+
+const buildAuthReq = (authSpecs: AuthSpec[], action: ActionType) => {
+  const relatedAuth = authSpecs
+    .filter(a => a.actions.includes(action)).filter(a => a.provider === "AMAZON_COGNITO_USER_POOLS")
+  if (relatedAuth.length === 0) {
+    return ''
+  }
+
+
+  const staticGroupAuthorization = (s: AuthSpec[]) => {
+    return s.filter(spec => spec.provider === 'AMAZON_COGNITO_USER_POOLS' && spec.strategy.type === 'GROUP')
+      .map((spec: AuthSpec) => {
+        const strategy = (<AuthGroupStrategySpec>(<AuthUserPoolsSpec>spec).strategy)
+        return `
+  ## Authorization rule: { groups: ${strategy.groups.toString()}, groupClaim: "${strategy.groupClaim || 'cognito:groups'}" } **
+  #set( $userGroups = $util.defaultIfNull($ctx.identity.claims.get("${strategy.groupClaim || 'cognito:groups'}"), []) )
+  #set( $allowedGroups = [${strategy.groups.map(g => '"' + g + '"').join(',')}] )
+  #foreach( $userGroup in $userGroups )
+    #if( $allowedGroups.contains($userGroup) )
+      #set( $isStaticGroupAuthorized = true )
+      #break
+    #end
+  #end
+  `}).join('\n')
+  }
+
+  const ownerAuthorization = (s: AuthSpec[]) => {
+    return s.filter(spec => spec.provider === 'AMAZON_COGNITO_USER_POOLS' && spec.strategy.type === 'OWNER').map((spec, index) => {
+      const strategy = (<AuthOwnerStrategySpec>(<AuthUserPoolsSpec>spec).strategy)
+      return `
+    ## Authorization rule: { allow: owner, ownerField: "${strategy.ownerField}", identityClaim: "${strategy.identityClaim || 'cognito:username'}" } **
+    $util.qr($ownerAuthExpressions.add("#owner${index} = :identity${index}"))
+    $util.qr($ownerAuthExpressionNames.put("#owner${index}", "${strategy.ownerField}"))
+    $util.qr($ownerAuthExpressionValues.put(":identity${index}", $util.dynamodb.toDynamoDB($util.defaultIfNull($ctx.identity.claims.get("username"), $util.defaultIfNull($ctx.identity.claims.get("${strategy.identityClaim || 'cognito:username'}"), "___xamznone____")))))
+  `})
+  }
+
+  const template = `
+## [Start] Determine request authentication mode **
+#if( $util.isNullOrEmpty($authMode) && !$util.isNull($ctx.identity) && !$util.isNull($ctx.identity.sub) && !$util.isNull($ctx.identity.issuer) && !$util.isNull($ctx.identity.username) && !$util.isNull($ctx.identity.claims) && !$util.isNull($ctx.identity.sourceIp) && !$util.isNull($ctx.identity.defaultAuthStrategy) )
+  #set( $authMode = "userPools" )
+#end
+## [End] Determine request authentication mode **
+## [Start] Check authMode and execute owner/group checks **
+#if( $authMode == "userPools" )
+  ## [Start] Static Group Authorization Checks **
+  #set($isStaticGroupAuthorized = $util.defaultIfNull(
+            $isStaticGroupAuthorized, false))
+${staticGroupAuthorization(authSpecs)}
+  ## [End] Static Group Authorization Checks **
+  #if( ! $isStaticGroupAuthorized )
+    ## [Start] Owner Authorization Checks **
+    #set( $ownerAuthExpressions = [] )
+    #set( $ownerAuthExpressionValues = {} )
+    #set( $ownerAuthExpressionNames = {} )
+${ownerAuthorization(authSpecs)}
+    ## [End] Owner Authorization Checks **
+
+
+    ## [Start] Collect Auth Condition **
+    #set( $authCondition = $util.defaultIfNull($authCondition, {
+  "expression": "",
+  "expressionNames": {},
+  "expressionValues": {}
+}) )
+    #set( $totalAuthExpression = "" )
+    ## Add dynamic group auth conditions if they exist **
+    #if( $groupAuthExpressions )
+      #foreach( $authExpr in $groupAuthExpressions )
+        #set( $totalAuthExpression = "$totalAuthExpression $authExpr" )
+        #if( $foreach.hasNext )
+          #set( $totalAuthExpression = "$totalAuthExpression OR" )
+        #end
+      #end
+    #end
+    #if( $groupAuthExpressionNames )
+      $util.qr($authCondition.expressionNames.putAll($groupAuthExpressionNames))
+    #end
+    #if( $groupAuthExpressionValues )
+      $util.qr($authCondition.expressionValues.putAll($groupAuthExpressionValues))
+    #end
+    ## Add owner auth conditions if they exist **
+    #if( $totalAuthExpression != "" && $ownerAuthExpressions && $ownerAuthExpressions.size() > 0 )
+      #set( $totalAuthExpression = "$totalAuthExpression OR" )
+    #end
+    #if( $ownerAuthExpressions )
+      #foreach( $authExpr in $ownerAuthExpressions )
+        #set( $totalAuthExpression = "$totalAuthExpression $authExpr" )
+        #if( $foreach.hasNext )
+          #set( $totalAuthExpression = "$totalAuthExpression OR" )
+        #end
+      #end
+    #end
+    #if( $ownerAuthExpressionNames )
+      $util.qr($authCondition.expressionNames.putAll($ownerAuthExpressionNames))
+    #end
+    #if( $ownerAuthExpressionValues )
+      $util.qr($authCondition.expressionValues.putAll($ownerAuthExpressionValues))
+    #end
+    ## Set final expression if it has changed. **
+    #if( $totalAuthExpression != "" )
+      #if( $util.isNullOrEmpty($authCondition.expression) )
+        #set( $authCondition.expression = "($totalAuthExpression)" )
+      #else
+        #set( $authCondition.expression = "$authCondition.expression AND ($totalAuthExpression)" )
+      #end
+    #end
+    ## [End] Collect Auth Condition **
+  #end
+
+
+  ## [Start] Throw if unauthorized **
+  #if( !($isStaticGroupAuthorized == true || ($totalAuthExpression != "")) )
+    $util.unauthorized()
+  #end
+  ## [End] Throw if unauthorized **
+#end
+## [End] Check authMode and execute owner/group checks **
+
+
+`
+  return template
+}
+
+const buildAuthListRes = (authSpecs: AuthSpec[]) => {
+  const relatedAuth = authSpecs
+    .filter(a => a.actions.includes("read")).filter(a => a.provider === "AMAZON_COGNITO_USER_POOLS")
+  if (relatedAuth.length === 0) {
+    return ''
+  }
+
+  const staticGroupAuthorization = (s: AuthSpec[]) => {
+    return s.filter(spec => spec.provider === 'AMAZON_COGNITO_USER_POOLS' && spec.strategy.type === 'GROUP')
+      .map((spec: AuthSpec) => {
+        const strategy = (<AuthGroupStrategySpec>(<AuthUserPoolsSpec>spec).strategy)
+        return `
+  ## Authorization rule: { groups: ${strategy.groups.toString()}, groupClaim: "${strategy.groupClaim || 'cognito:groups'}" } **
+  #set( $userGroups = $util.defaultIfNull($ctx.identity.claims.get("${strategy.groupClaim || 'cognito:groups'}"), []) )
+  #set( $allowedGroups = [${strategy.groups.map(g => '"' + g + '"').join(',')}] )
+  #foreach( $userGroup in $userGroups )
+    #if( $allowedGroups.contains($userGroup) )
+      #set( $isStaticGroupAuthorized = true )
+      #break
+    #end
+  #end
+  `}).join('\n')
+  }
+
+
+  const ownerAuthorization = (s: AuthSpec[]) => {
+    return s.filter(spec => spec.provider === 'AMAZON_COGNITO_USER_POOLS' && spec.strategy.type === 'OWNER').map((spec, index) => {
+      const strategy = (<AuthOwnerStrategySpec>(<AuthUserPoolsSpec>spec).strategy)
+      return `
+  ## Authorization rule: { allow: owner, ownerField: "${strategy.ownerField}", identityClaim: "${strategy.identityClaim || 'cognito:username'}" } **
+      #set( $allowedOwners${index} = $item.${strategy.ownerField} )
+      #set( $identityValue = $util.defaultIfNull($ctx.identity.claims.get("username"), $util.defaultIfNull($ctx.identity.claims.get("${strategy.identityClaim || 'cognito:username'}"), "___xamznone____")) )
+      #if( $util.isList($allowedOwners${index}) )
+        #foreach( $allowedOwner in $allowedOwners${index} )
+          #if( $allowedOwner == $identityValue )
+            #set( $isLocalOwnerAuthorized = true )
+          #end
+        #end
+      #end
+      #if( $util.isString($allowedOwners${index}) )
+        #if( $allowedOwners${index} == $identityValue )
+          #set( $isLocalOwnerAuthorized = true )
+        #end
+      #end
+  `})
+  }
+  return `
+## [Start] Determine request authentication mode **
+#if( $util.isNullOrEmpty($authMode) && !$util.isNull($ctx.identity) && !$util.isNull($ctx.identity.sub) && !$util.isNull($ctx.identity.issuer) && !$util.isNull($ctx.identity.username) && !$util.isNull($ctx.identity.claims) && !$util.isNull($ctx.identity.sourceIp) && !$util.isNull($ctx.identity.defaultAuthStrategy) )
+  #set( $authMode = "userPools" )
+#end
+## [End] Determine request authentication mode **
+## [Start] Check authMode and execute owner/group checks **
+#if( $authMode == "userPools" )
+  ## [Start] Static Group Authorization Checks **
+  #set($isStaticGroupAuthorized = $util.defaultIfNull(
+            $isStaticGroupAuthorized, false))
+${staticGroupAuthorization(authSpecs)}
+  ## [End] Static Group Authorization Checks **
+  ## [Start] If not static group authorized, filter items **
+  #if( !$isStaticGroupAuthorized )
+    #set( $items = [] )
+    #foreach( $item in $ctx.result.items )
+      ## No Dynamic Group Authorization Rules **
+
+
+      ## [Start] Owner Authorization Checks **
+      #set( $isLocalOwnerAuthorized = false )
+${ownerAuthorization(authSpecs)}
+      ## [End] Owner Authorization Checks **
+
+
+      #if( ($isLocalDynamicGroupAuthorized == true || $isLocalOwnerAuthorized == true) )
+        $util.qr($items.add($item))
+      #end
+    #end
+    #set( $ctx.result.items = $items )
+  #end
+  ## [End] If not static group authorized, filter items **
+## [End] Check authMode and execute owner/group checks **
+
+`
+}
 
 const buildCreateReq = (
   tableName: string,
@@ -942,20 +1326,20 @@ const buildCreateReq = (
   ].filter((a) => !!a);
   return `
 ${
-  (keys.length === 2 &&
-    `
+    (keys.length === 2 &&
+      `
  ## [Start] Set the primary @key. **
 #set( $modelObjectKey = {
   "${keys[0]}": $util.dynamodb.toDynamoDB($ctx.args.input.${keys[0]}),
   "${keys[1]}": $util.dynamodb.toDynamoDB("${primaryKey.fields
-      .slice(1)
-      .map((k) => `\${ctx.args.input.${k}}`)
-      .join("#")}")
+        .slice(1)
+        .map((k) => `\${ctx.args.input.${k}}`)
+        .join("#")}")
 } )
 ## [End] Set the primary @key. ** 
 `) ||
-  ""
-}
+    ""
+    }
 ## [Start] Prepare DynamoDB PutItem Request. **
 #set( $createdAt = $util.time.nowISO8601() )
 ## Automatically set the createdAt timestamp. **
@@ -964,19 +1348,19 @@ $util.qr($context.args.input.put("createdAt", $util.defaultIfNull($ctx.args.inpu
 $util.qr($context.args.input.put("updatedAt", $util.defaultIfNull($ctx.args.input.updatedAt, $createdAt)))
 $util.qr($context.args.input.put("__typename", "${tableName}"))
 ${compositeKeys
-  .map(
-    (k) => `
+      .map(
+        (k) => `
 $util.qr($ctx.args.input.put("${k.fields.slice(1).join("#")}","${k.fields
-      .slice(1)
-      .map((k) => `\${${k}}`)
-      .join("#")}"))
+            .slice(1)
+            .map((k) => `\${${k}}`)
+            .join("#")}"))
 `
-  )
-  .join("\n")}
+      )
+      .join("\n")}
 #set( $condition = {
   "expression": "${keys
-    .map((f, i) => `attribute_not_exists(#id${i})`)
-    .join(" AND ")}",
+      .map((f, i) => `attribute_not_exists(#id${i})`)
+      .join(" AND ")}",
   "expressionNames": {
     ${keys.map((f, i) => `"#id${i}": "${f}"`).join(",\n")}
   }
@@ -1000,9 +1384,9 @@ $util.qr($ctx.args.input.put("${k.fields.slice(1).join("#")}","${k.fields
   "key": #if( $modelObjectKey ) $util.toJson($modelObjectKey) #else {
   "${
     keys[0]
-  }":   $util.dynamodb.toDynamoDBJson($util.defaultIfNullOrBlank($ctx.args.input.${
+    }":   $util.dynamodb.toDynamoDBJson($util.defaultIfNullOrBlank($ctx.args.input.${
     keys[0]
-  }, $util.autoId()))
+    }, $util.autoId()))
 } #end,
   "attributeValues": $util.dynamodb.toMapValuesJson($context.args.input),
   "condition": $util.toJson($condition)
@@ -1017,13 +1401,15 @@ $util.toJson($ctx.result)
   `;
 };
 
-const buildUpdateReq = (typeName: string, primaryKey: KeySpec) => {
+const buildUpdateReq = (typeName: string, primaryKey: KeySpec, authSpecs: AuthSpec[]) => {
   const keys = [
     primaryKey.fields[0],
     primaryKey.fields.slice(1).join("#"),
   ].filter((a) => !!a);
   const safeKeys = buildSafePrimaryKeys(primaryKey);
+  const authExpression = buildAuthReq(authSpecs, 'update')
   return `
+  ${authExpression}
 #if( $authCondition && $authCondition.expression != "" )
   #set( $condition = $authCondition )
   #if( $modelObjectKey )
@@ -1059,8 +1445,8 @@ const buildUpdateReq = (typeName: string, primaryKey: KeySpec) => {
   #else
     #set( $condition = {
   "expression": "${keys
-    .map((k, i) => `attribute_exists(#id${i})`)
-    .join(" AND ")}",
+      .map((k, i) => `attribute_exists(#id${i})`)
+      .join(" AND ")}",
   "expressionNames": {
 ${keys.map((k, i) => `"#id${i}": "${k}"`).join(",\n")}
   },
@@ -1158,14 +1544,14 @@ $util.qr($update.put("expression", "$expression"))
   "operation": "UpdateItem",
   "key": #if( $modelObjectKey ) $util.toJson($modelObjectKey) #else {
 ${keys
-  .map(
-    (keyName, i) => `
+      .map(
+        (keyName, i) => `
   "${keyName}": {
       "S": $util.toJson($context.args.input.${safeKeys[i]})
   }
 `
-  )
-  .join(",\n")}
+      )
+      .join(",\n")}
 } #end,
   "update": $util.toJson($update),
   "condition": $util.toJson($condition)
@@ -1217,8 +1603,8 @@ const buildDeleteReq = (typeName: string, primaryKey: KeySpec) => {
   #else
     #set( $condition = {
   "expression": "${keys
-    .map((f, i) => `attribute_not_exists(#id${i})`)
-    .join(" AND ")}",
+      .map((f, i) => `attribute_not_exists(#id${i})`)
+      .join(" AND ")}",
   "expressionNames": {
     ${keys.map((f, i) => `"#id${i}": "${f}"`).join(",\n")}
   }
@@ -1252,11 +1638,11 @@ const buildDeleteReq = (typeName: string, primaryKey: KeySpec) => {
   "operation": "DeleteItem",
   "key": #if( $modelObjectKey ) $util.toJson($modelObjectKey) #else {
   ${keys
-    .map(
-      (keyName, i) =>
-        `"${keyName}": $util.dynamodb.toDynamoDBJson($ctx.args.input.${inputKeys[i]})`
-    )
-    .join(",\n")}
+      .map(
+        (keyName, i) =>
+          `"${keyName}": $util.dynamodb.toDynamoDBJson($ctx.args.input.${inputKeys[i]})`
+      )
+      .join(",\n")}
 } #end,
   "condition": $util.toJson($condition)
 }
@@ -1269,7 +1655,7 @@ $util.toJson($ctx.result)
   `;
 };
 
-const buildHasOne = (yours: string, mine: string) => {
+const buildHasOne = (yours: string, mine: string, typeName: string) => {
   return [
     `
 {
@@ -1280,17 +1666,11 @@ const buildHasOne = (yours: string, mine: string) => {
     }
 }
 `,
-    `
-#if($ctx.error)
-  $util.error($ctx.error.message, $ctx.error.type)
-#end
-#set($res = $ctx.result)
-$util.toJson($res)
-`,
+    buildHasOneRes(typeName),
   ];
 };
 
-const buildHasMany = (yours: string, mine: string, indexName: string) => {
+const buildHasMany = (yours: string, mine: string, indexName: string, typeName: string) => {
   return [
     `
 #set( $limit = $util.defaultIfNull($context.args.limit, 100) )
@@ -1332,27 +1712,48 @@ null
   "index": "${indexName}"
 }
 `,
-    `
-$util.toJson($ctx.result)
-`,
+    buildHasManyRes(typeName),
   ];
 };
 
+const buildHasManyRes = (target: string) => {
+  return `
+  ${TableResource.table(target)?.protectListRes()
+    }
+$util.toJson($ctx.result)
+  `;
+}
+
+const buildHasOneRes = (target: string) => {
+  return `
+  ${
+    TableResource.table(target)?.protectGetRes()
+    }
+#if($ctx.error)
+  $util.error($ctx.error.message, $ctx.error.type)
+#end
+#set($res = $ctx.result)
+$util.toJson($res)
+  `;
+}
+
 const buildQueryOperations = (typeName: string, keySpec: KeySpec) => {
   return `
- extend type Query {
-  ${keySpec.queryField}(${(() => {
-    if (keySpec.fields.length === 1) {
-      return `${keySpec.fields[0]}: String`;
-    }
-    if (keySpec.fields.length === 2) {
-      return `${keySpec.fields[0]}: String,  ${keySpec.fields[1]}: ModelStringConditionInput`;
-    }
-    return `${keySpec.fields[0]}: String,  ${keySpec.fields[1]}${keySpec.fields
-      .slice(2)
-      .map((f) => f[0].toUpperCase() + f.slice(1))
-      .join("")}: Model${typeName}${keySpec.name}CompositeKeyConditionInput`;
-  })()},  filter: Model${typeName}FilterInput, limit: Int, nextToken: String): Model${typeName}Connection 
+extend type Query {
+  ${ keySpec.queryField} (${
+    (() => {
+      if (keySpec.fields.length === 1) {
+        return `${keySpec.fields[0]}: String`;
+      }
+      if (keySpec.fields.length === 2) {
+        return `${keySpec.fields[0]}: String,  ${keySpec.fields[1]}: ModelStringConditionInput`;
+      }
+      return `${keySpec.fields[0]}: String,  ${keySpec.fields[1]}${keySpec.fields
+        .slice(2)
+        .map((f) => f[0].toUpperCase() + f.slice(1))
+        .join("")}: Model${typeName}${keySpec.name}CompositeKeyConditionInput`;
+    })()
+    }, filter: Model${typeName}FilterInput, limit: Int, nextToken: String): Model${typeName}Connection
  }
 input Model${typeName}${keySpec.name}CompositeKeyConditionInput {
   eq: Model${typeName}${keySpec.name}CompositeKeyInput
@@ -1364,10 +1765,12 @@ input Model${typeName}${keySpec.name}CompositeKeyConditionInput {
   beginsWith: Model${typeName}${keySpec.name}CompositeKeyInput
 }
 input Model${typeName}${keySpec.name}CompositeKeyInput {
-  ${keySpec.fields
-    .slice(1)
-    .map((f) => `${f}: String`)
-    .join("\n")}
+  ${
+    keySpec.fields
+      .slice(1)
+      .map((f) => `${f}: String`)
+      .join("\n")
+    }
 }
 `;
 };
@@ -1375,81 +1778,81 @@ input Model${typeName}${keySpec.name}CompositeKeyInput {
 const buildQueryListReq = (keySpec: KeySpec): string => {
   if (keySpec.fields.length == 2) {
     return `
-## [Start] Set query expression for @key **
-#set( $modelQueryExpression = {} )
-## [Start] Validate key arguments. **
-#if( !$util.isNull($ctx.args.${keySpec.fields[1]}) && $util.isNull($ctx.args.${keySpec.fields[0]}) )
-  $util.error("When providing argument '${keySpec.fields[1]}' you must also provide arguments ${keySpec.fields[0]}", "InvalidArgumentsError")
+##[Start] Set query expression for @key **
+#set($modelQueryExpression = {})
+##[Start] Validate key arguments. **
+#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && $util.isNull($ctx.args.${keySpec.fields[0]}))
+$util.error("When providing argument '${keySpec.fields[1]}' you must also provide arguments ${keySpec.fields[0]}", "InvalidArgumentsError")
 #end
-## [End] Validate key arguments. **
-#if( !$util.isNull($ctx.args.${keySpec.fields[0]}) )
-  #set( $modelQueryExpression.expression = "#${keySpec.fields[0]} = :${keySpec.fields[0]}" )
-  #set( $modelQueryExpression.expressionNames = {
+##[End] Validate key arguments. **
+#if(!$util.isNull($ctx.args.${ keySpec.fields[0]}))
+  #set($modelQueryExpression.expression = "#${keySpec.fields[0]} = :${keySpec.fields[0]}")
+  #set($modelQueryExpression.expressionNames = {
   "#${keySpec.fields[0]}": "${keySpec.fields[0]}"
-} )
-  #set( $modelQueryExpression.expressionValues = {
+})
+  #set($modelQueryExpression.expressionValues = {
   ":yearMonth": {
-      "S": "$ctx.args.${keySpec.fields[0]}"
+    "S": "$ctx.args.${keySpec.fields[0]}"
   }
-} )
+})
 #end
-## [Start] Applying Key Condition **
-#if( !$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.beginsWith) )
-  #set( $modelQueryExpression.expression = "$modelQueryExpression.expression AND begins_with(#sortKey, :sortKey)" )
-  $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
-  $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.beginsWith" }))
+##[Start] Applying Key Condition **
+#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.beginsWith))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND begins_with(#sortKey, :sortKey)")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.beginsWith" }))
 #end
-#if( !$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.between) )
-  #set( $modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey BETWEEN :sortKey0 AND :sortKey1" )
-  $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
-  $util.qr($modelQueryExpression.expressionValues.put(":sortKey0", { "S": "$ctx.args.${keySpec.fields[1]}.between[0]" }))
-  $util.qr($modelQueryExpression.expressionValues.put(":sortKey1", { "S": "$ctx.args.${keySpec.fields[1]}.between[1]" }))
+#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.between))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey BETWEEN :sortKey0 AND :sortKey1")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey0", { "S": "$ctx.args.${keySpec.fields[1]}.between[0]" }))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey1", { "S": "$ctx.args.${keySpec.fields[1]}.between[1]" }))
 #end
-#if( !$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.eq) )
-  #set( $modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey = :sortKey" )
-  $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
-  $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.eq" }))
+#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.eq))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey = :sortKey")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.eq" }))
 #end
-#if( !$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.lt) )
-  #set( $modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey < :sortKey" )
-  $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
-  $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.lt" }))
+#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.lt))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey < :sortKey")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.lt" }))
 #end
-#if( !$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.le) )
-  #set( $modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey <= :sortKey" )
-  $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
-  $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.le" }))
+#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.le))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey <= :sortKey")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.le" }))
 #end
-#if( !$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.gt) )
-  #set( $modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey > :sortKey" )
-  $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
-  $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.gt" }))
+#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.gt))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey > :sortKey")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.gt" }))
 #end
-#if( !$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.ge) )
-  #set( $modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey >= :sortKey" )
-  $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
-  $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.ge" }))
+#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.ge))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey >= :sortKey")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.ge" }))
 #end
-## [End] Applying Key Condition **
-## [End] Set query expression for @key **
-#set( $limit = $util.defaultIfNull($context.args.limit, 100) )
-#set( $QueryRequest = {
+##[End] Applying Key Condition **
+##[End] Set query expression for @key **
+#set($limit = $util.defaultIfNull($context.args.limit, 100))
+#set($QueryRequest = {
   "version": "2017-02-28",
   "operation": "Query",
   "limit": $limit,
   "query": $modelQueryExpression,
   "index": "${keySpec.name}"
-} )
-#if( !$util.isNull($ctx.args.sortDirection)
-                    && $ctx.args.sortDirection == "DESC" )
-  #set( $QueryRequest.scanIndexForward = false )
+})
+#if(!$util.isNull($ctx.args.sortDirection)
+  && $ctx.args.sortDirection == "DESC")
+  #set($QueryRequest.scanIndexForward = false)
 #else
-  #set( $QueryRequest.scanIndexForward = true )
+  #set($QueryRequest.scanIndexForward = true)
 #end
-#if( $context.args.nextToken ) #set( $QueryRequest.nextToken = $context.args.nextToken ) #end
-#if( $context.args.filter ) #set( $QueryRequest.filter = $util.parseJson("$util.transform.toDynamoDBFilterExpression($ctx.args.filter)") ) #end
+#if($context.args.nextToken) #set($QueryRequest.nextToken = $context.args.nextToken) #end
+#if($context.args.filter) #set($QueryRequest.filter = $util.parseJson("$util.transform.toDynamoDBFilterExpression($ctx.args.filter)")) #end
 $util.toJson($QueryRequest)
-    `;
+  `;
   }
   const compositeKey =
     keySpec.fields[1] +
@@ -1458,144 +1861,152 @@ $util.toJson($QueryRequest)
       .map((f) => f[0].toUpperCase() + f.slice(1))
       .join("");
   return `
-## [Start] Set query expression for @key **
-#set( $modelQueryExpression = {} )
-#if( !$util.isNull($ctx.args.${keySpec.fields[0]}) )
-  #set( $modelQueryExpression.expression = "#${keySpec.fields[0]} = :${
+##[Start] Set query expression for @key **
+#set($modelQueryExpression = {})
+#if(!$util.isNull($ctx.args.${ keySpec.fields[0]}))
+  #set($modelQueryExpression.expression = "#${keySpec.fields[0]} = :${
     keySpec.fields[0]
-  }" )
-  #set( $modelQueryExpression.expressionNames = {
-  "#${keySpec.fields[0]}": "${keySpec.fields[0]}"
-} )
-  #set( $modelQueryExpression.expressionValues = {
-  ":${keySpec.fields[0]}": {
+    }" )
+  #set($modelQueryExpression.expressionNames = {
+    "#${keySpec.fields[0]}": "${keySpec.fields[0]}"
+  })
+  #set($modelQueryExpression.expressionValues = {
+    ":${keySpec.fields[0]}": {
       "S": "$ctx.args.${keySpec.fields[0]}"
-  }
-} )
+    }
+  })
 #end
-## [Start] Applying Key Condition **
-#set( $sortKeyValue = "" )
-#set( $sortKeyValue2 = "" )
-#if( !$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.beginsWith) )
-  #if( !$util.isNull($ctx.args.${compositeKey}.beginsWith.${
+##[Start] Applying Key Condition **
+#set($sortKeyValue = "")
+#set($sortKeyValue2 = "")
+#if(!$util.isNull($ctx.args.${ compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.beginsWith))
+  #if(!$util.isNull($ctx.args.${ compositeKey}.beginsWith.${
     keySpec.fields[1]
-  }) ) #set( $sortKeyValue = "$ctx.args.${compositeKey}.beginsWith.${
+    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.beginsWith.${
     keySpec.fields[1]
-  }" ) #end
-  ${keySpec.fields
-    .slice(1)
-    .map(
-      (f) => `
+    }" ) #end
+  ${
+    keySpec.fields
+      .slice(1)
+      .map(
+        (f) => `
   #if( !$util.isNull($ctx.args.${compositeKey}.beginsWith.${f}) ) #set( $sortKeyValue = "$sortKeyValue#$ctx.args.${compositeKey}.beginsWith.${f}" ) #end
   `
-    )
-    .join("\n")}
-  #set( $modelQueryExpression.expression = "$modelQueryExpression.expression AND begins_with(#sortKey, :sortKey)" )
+      )
+      .join("\n")
+    }
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND begins_with(#sortKey, :sortKey)")
   $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields
-    .slice(1)
-    .join("#")}"))
+      .slice(1)
+      .join("#")}"))
   $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$sortKeyValue" }))
 #end
-#if( !$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.between) )
-  #if( $ctx.args.${compositeKey}.between.size() != 2 )
+#if(!$util.isNull($ctx.args.${ compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.between))
+  #if($ctx.args.${ compositeKey}.between.size() != 2)
     $util.error("Argument ${compositeKey}.between expects exactly 2 elements.")
   #end
-  #if( !$util.isNull($ctx.args.${compositeKey}.between[0].${
+  #if(!$util.isNull($ctx.args.${ compositeKey}.between[0].${
     keySpec.fields[1]
-  }) ) #set( $sortKeyValue = "$ctx.args.${compositeKey}.between[0].${
+    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.between[0].${
     keySpec.fields[1]
-  }" ) #end
-  ${keySpec.fields
-    .slice(2)
-    .map(
-      (f) => `
+    }" ) #end
+  ${
+    keySpec.fields
+      .slice(2)
+      .map(
+        (f) => `
   #if( !$util.isNull($ctx.args.${compositeKey}.between[0].${f}) ) #set( $sortKeyValue = "$sortKeyValue#$ctx.args.${compositeKey}.between[0].${f}" ) #end
   `
-    )
-    .join("\n")}
-  #if( !$util.isNull($ctx.args.${compositeKey}.between[1].${
+      )
+      .join("\n")
+    }
+  #if(!$util.isNull($ctx.args.${ compositeKey}.between[1].${
     keySpec.fields[1]
-  }) ) #set( $sortKeyValue2 = "$ctx.args.${compositeKey}.between[1].${
+    })) #set($sortKeyValue2 = "$ctx.args.${compositeKey}.between[1].${
     keySpec.fields[1]
-  }" ) #end
-  ${keySpec.fields
-    .slice(2)
-    .map(
-      (f) => `
+    }" ) #end
+  ${
+    keySpec.fields
+      .slice(2)
+      .map(
+        (f) => `
   #if( !$util.isNull($ctx.args.${compositeKey}.between[1].${f}) ) #set( $sortKeyValue2 = "$sortKeyValue2#$ctx.args.${compositeKey}.between[1].${f}" ) #end
   `
-    )
-    .join("\n")}
-    #set( $modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey BETWEEN :sortKey0 AND :sortKey1" )
+      )
+      .join("\n")
+    }
+    #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey BETWEEN :sortKey0 AND :sortKey1")
     $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields
       .slice(1)
       .join("#")}"))
     $util.qr($modelQueryExpression.expressionValues.put(":sortKey0", { "S": "$sortKeyValue" }))
     $util.qr($modelQueryExpression.expressionValues.put(":sortKey1", { "S": "$sortKeyValue2" }))
 #end
-${["eq", "lt", "gt", "le", "ge"]
-  .map(
-    (operator) => `
+${
+    ["eq", "lt", "gt", "le", "ge"]
+      .map(
+        (operator) => `
 #if( !$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.${operator}) )
   #if( !$util.isNull($ctx.args.${compositeKey}.${operator}.${
-      keySpec.fields[1]
-    }) ) #set( $sortKeyValue = "$ctx.args.${compositeKey}.${operator}.${
-      keySpec.fields[1]
-    }" ) #end
+          keySpec.fields[1]
+          }) ) #set( $sortKeyValue = "$ctx.args.${compositeKey}.${operator}.${
+          keySpec.fields[1]
+          }" ) #end
   ${keySpec.fields
-    .slice(2)
-    .map(
-      (f) => `
+            .slice(2)
+            .map(
+              (f) => `
   #if( !$util.isNull($ctx.args.${compositeKey}.${operator}.${f}) ) #set( $sortKeyValue = "$sortKeyValue#$ctx.args.${compositeKey}.${operator}.${f}" ) #end
   `
-    )
-    .join("\n")}
+            )
+            .join("\n")}
   #set( $modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey ${(() => {
-    switch (operator) {
-      case "eq":
-        return "=";
-      case "lt":
-        return "<";
-      case "le":
-        return "<=";
-      case "gt":
-        return ">";
-      case "ge":
-        return ">=";
-    }
-  })()} :sortKey" )
+            switch (operator) {
+              case "eq":
+                return "=";
+              case "lt":
+                return "<";
+              case "le":
+                return "<=";
+              case "gt":
+                return ">";
+              case "ge":
+                return ">=";
+            }
+          })()} :sortKey" )
   $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields
-    .slice(1)
-    .join("#")}"))
+            .slice(1)
+            .join("#")}"))
   $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$sortKeyValue" }))
 #end
   `
-  )
-  .join("\n")}
-## [End] Applying Key Condition **
-## [End] Set query expression for @key **
-#set( $limit = $util.defaultIfNull($context.args.limit, 100) )
-#set( $QueryRequest = {
-  "version": "2017-02-28",
-  "operation": "Query",
-  "limit": $limit,
-  "query": $modelQueryExpression,
-  "index": "${keySpec.name}"
-} )
-#if( !$util.isNull($ctx.args.sortDirection)
-                    && $ctx.args.sortDirection == "DESC" )
-  #set( $QueryRequest.scanIndexForward = false )
+      )
+      .join("\n")
+    }
+##[End] Applying Key Condition **
+##[End] Set query expression for @key **
+#set($limit = $util.defaultIfNull($context.args.limit, 100))
+#set($QueryRequest = {
+      "version": "2017-02-28",
+      "operation": "Query",
+      "limit": $limit,
+      "query": $modelQueryExpression,
+      "index": "${keySpec.name}"
+    })
+#if(!$util.isNull($ctx.args.sortDirection)
+      && $ctx.args.sortDirection == "DESC")
+  #set($QueryRequest.scanIndexForward = false)
 #else
-  #set( $QueryRequest.scanIndexForward = true )
+  #set($QueryRequest.scanIndexForward = true)
 #end
-#if( $context.args.nextToken ) #set( $QueryRequest.nextToken = $context.args.nextToken ) #end
-#if( $context.args.filter ) #set( $QueryRequest.filter = $util.parseJson("$util.transform.toDynamoDBFilterExpression($ctx.args.filter)") ) #end
+#if($context.args.nextToken) #set($QueryRequest.nextToken = $context.args.nextToken) #end
+#if($context.args.filter) #set($QueryRequest.filter = $util.parseJson("$util.transform.toDynamoDBFilterExpression($ctx.args.filter)")) #end
 $util.toJson($QueryRequest)
-`;
+  `;
 };
 
 const buildQueryListRes = () => {
   return `
 $util.toJson($ctx.result)
-    `;
+  `;
 };
