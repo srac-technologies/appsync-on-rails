@@ -154,7 +154,7 @@ export class TableResource implements Printable {
                   {
                     Type: "AWS::DynamoDB::Table",
                     Properties: {
-                      TableName: this.tableName,
+                      TableName: `${this.tableName}_\${self:provider.stage}`,
                       AttributeDefinitions: [
                         ...buildPrimaryKeys(this.primaryKey).map((k) => ({
                           AttributeName: k,
