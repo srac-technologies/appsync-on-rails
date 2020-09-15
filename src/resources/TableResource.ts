@@ -10,6 +10,7 @@ import { Printable } from "../interfaces/resource/Printable";
 import { args } from "../io/CliArgs";
 import { DiggerUtils, unTypeEasy, typeEasy } from "../utils/DiggerUtils";
 import { ResourceDefinition } from "../interfaces/resource/IResource";
+import { type } from "os";
 
 export type KeySpec = {
   name?: string;
@@ -22,6 +23,7 @@ export type ConnectionSpec = {
   name: string;
   foreignKey?: string;
   node: FieldDefinitionNode;
+  sortableWith?: string[];
 };
 
 
@@ -329,10 +331,11 @@ export class TableResource implements Printable {
         path: "",
         resource: c.hasMany
           ? buildHasMany(
-            TableResource.table(c.with)?.primaryKey.fields[0] || "",
-            getForeignKey(c, this.tableName),
+            this.primaryKey.fields[0] || "",
+            getForeignKey(c, this.tableName, true),
             c.name,
-            c.with
+            c.with,
+            c.sortableWith
           )[0]
           : buildHasOne(
             TableResource.table(c.with)?.primaryKey.fields[0] || "",
@@ -345,15 +348,16 @@ export class TableResource implements Printable {
         path: "",
         resource: c.hasMany
           ? buildHasMany(
-            TableResource.table(c.with)?.primaryKey.fields[0] || "",
-            getForeignKey(c, this.tableName),
+            this.primaryKey.fields[0] || "",
+            getForeignKey(c, this.tableName, true),
             c.name,
-            c.with
+            c.with,
+            c.sortableWith
           )[1]
           : buildHasOne(
             TableResource.table(c.with)?.primaryKey.fields[0] || "",
             getForeignKey(c, this.tableName),
-            c.with
+            c.with,
           )[1],
       })),
       ...this.connections.map((c) => ({
@@ -375,55 +379,7 @@ export class TableResource implements Printable {
               return c.node.type;
             })(),
             arguments: c.hasMany
-              ? [
-                {
-                  kind: "InputValueDefinition",
-                  name: { value: "filter", kind: "Name" },
-                  type: {
-                    kind: "NamedType",
-                    name: {
-                      value: `Model${
-                        unTypeEasy(c.node).baseTypeName
-                        }FilterInput`,
-                      kind: "Name",
-                    },
-                  },
-                },
-                {
-                  kind: "InputValueDefinition",
-                  name: { value: "sortDirection", kind: "Name" },
-                  type: {
-                    kind: "NamedType",
-                    name: {
-                      value: "ModelSortDirection",
-                      kind: "Name",
-                    },
-                  },
-                },
-                {
-                  kind: "InputValueDefinition",
-                  name: { value: "limit", kind: "Name" },
-                  type: {
-                    kind: "NamedType",
-                    name: {
-                      value: "Int",
-                      kind: "Name",
-                    },
-                  },
-                },
-                {
-                  kind: "InputValueDefinition",
-                  name: { value: "nextToken", kind: "Name" },
-                  type: {
-                    kind: "NamedType",
-                    name: {
-                      value: "String",
-                      kind: "Name",
-                    },
-                  },
-                },
-              ]
-              : [],
+              ? buildHasManyConnectionArguments(c) : [],
           })
         ),
         resource: {},
@@ -470,12 +426,135 @@ export class TableResource implements Printable {
   }
 }
 
-const getForeignKey = (connection: ConnectionSpec, tableName: string) => {
+const getForeignKey = (connection: ConnectionSpec, tableName: string, hasMany: boolean = false) => {
+  if (hasMany) {
+    return (
+      connection.foreignKey ||
+      `${connection.with[0].toLowerCase() + connection.with.slice(1)}${tableName}Id`
+    );
+  }
   return (
     connection.foreignKey ||
     `${tableName[0].toLowerCase() + tableName.slice(1)}${connection.with}Id`
   );
 };
+
+
+const buildHasManyConnectionArguments = (c: ConnectionSpec) => {
+  if (!c.sortableWith) {
+    return [
+      {
+        kind: "InputValueDefinition",
+        name: { value: "filter", kind: "Name" },
+        type: {
+          kind: "NamedType",
+          name: {
+            value: `Model${
+              unTypeEasy(c.node).baseTypeName
+              }FilterInput`,
+            kind: "Name",
+          },
+        },
+      },
+      {
+        kind: "InputValueDefinition",
+        name: { value: "sortDirection", kind: "Name" },
+        type: {
+          kind: "NamedType",
+          name: {
+            value: "ModelSortDirection",
+            kind: "Name",
+          },
+        },
+      },
+      {
+        kind: "InputValueDefinition",
+        name: { value: "limit", kind: "Name" },
+        type: {
+          kind: "NamedType",
+          name: {
+            value: "Int",
+            kind: "Name",
+          },
+        },
+      },
+      {
+        kind: "InputValueDefinition",
+        name: { value: "nextToken", kind: "Name" },
+        type: {
+          kind: "NamedType",
+          name: {
+            value: "String",
+            kind: "Name",
+          },
+        },
+      },
+    ]
+  }
+
+  return [
+    {
+      kind: "InputValueDefinition",
+      name: { value: "filter", kind: "Name" },
+      type: {
+        kind: "NamedType",
+        name: {
+          value: `Model${
+            unTypeEasy(c.node).baseTypeName
+            }FilterInput`,
+          kind: "Name",
+        },
+      },
+    },
+    {
+      kind: "InputValueDefinition",
+      name: { value: c.sortableWith[0] + c.sortableWith.slice(1).map(k => k[0].toUpperCase() + k.slice(1)).join(''), kind: "Name" },
+      type: {
+        kind: "NamedType",
+        name: {
+          value: `Model${
+            c.name
+            }${c.sortableWith.length === 1 ? 'KeyCondition' : 'CompositeKeyCondition'}Input`,
+          kind: "Name",
+        },
+      },
+    },
+    {
+      kind: "InputValueDefinition",
+      name: { value: "sortDirection", kind: "Name" },
+      type: {
+        kind: "NamedType",
+        name: {
+          value: "ModelSortDirection",
+          kind: "Name",
+        },
+      },
+    },
+    {
+      kind: "InputValueDefinition",
+      name: { value: "limit", kind: "Name" },
+      type: {
+        kind: "NamedType",
+        name: {
+          value: "Int",
+          kind: "Name",
+        },
+      },
+    },
+    {
+      kind: "InputValueDefinition",
+      name: { value: "nextToken", kind: "Name" },
+      type: {
+        kind: "NamedType",
+        name: {
+          value: "String",
+          kind: "Name",
+        },
+      },
+    },
+  ]
+
+}
 
 const buildGSIs = (
   keys: KeySpec[],
@@ -531,6 +610,10 @@ const buildGSIs = (
                 `${self[0].toLowerCase() + self.slice(1)}${b.with}Id`,
               KeyType: "HASH",
             },
+            ...b.sortableWith ? [{
+              AttributeName: b.sortableWith.join('#'),
+              KeyType: "RANGE"
+            }] : []
           ],
           Projection: {
             ProjectionType: "ALL",
@@ -690,6 +773,43 @@ input Model${typeName}${keySpec.name}CompositeKeyInput {
   }));
 };
 
+const buildConnectionKeyInputs = (connections: ConnectionSpec[]) => {
+  return connections.filter(c => c.sortableWith).map((connection) => (
+    (connection.sortableWith?.length || 0) > 1 ?
+      `
+input Model${connection.name}CompositeKeyConditionInput {
+  eq: Model${connection.name}CompositeKeyInput
+  le: Model${connection.name}CompositeKeyInput
+  lt: Model${connection.name}CompositeKeyInput
+  ge: Model${connection.name}CompositeKeyInput
+  gt: Model${connection.name}CompositeKeyInput
+  between: [Model${connection.name}CompositeKeyInput]
+  beginsWith: Model${connection.name}CompositeKeyInput
+}
+
+input Model${connection.name}CompositeKeyInput {
+  ${connection.sortableWith?.map((f) => `${f}: String`).join("\n")}
+}
+    
+    `
+      : `
+input Model${connection.name}KeyConditionInput {
+  eq: Model${connection.name}KeyInput
+  le: Model${connection.name}KeyInput
+  lt: Model${connection.name}KeyInput
+  ge: Model${connection.name}KeyInput
+  gt: Model${connection.name}KeyInput
+  between: [Model${connection.name}KeyInput]
+  beginsWith: Model${connection.name}KeyInput
+}
+
+input Model${connection.name}KeyInput {
+  ${(connection.sortableWith || [])[0] || ''}: String
+}
+`
+  )).join('\n');
+}
+
 const buildAuthDirectives = (authSpec: AuthSpec[], action: ActionType) => {
   return authSpec.filter(spec => spec.actions.includes(action)).map(buildAuthDirective).filter((d, i, a) => a.indexOf(d) === i).map(s => '@' + s).join(' ')
 }
@@ -719,6 +839,7 @@ const buildCrudOperations = (
   authSpec: AuthSpec[]
 ) => {
   const keyOperations = buildSortKeyQueryOperations(typeName, sortKeys, authSpec);
+  const connectionKeys = buildConnectionKeyInputs(connections);
   return `
  extend type Query {
   get${typeName}(${buildSafePrimaryKeys(primaryKey)
@@ -971,6 +1092,7 @@ const buildCrudOperations = (
       .join("\n")}
  }
  ${keyOperations.map((o) => o.inputs).join("\n")}
+ ${connectionKeys}
  `;
 };
 
@@ -1352,7 +1474,7 @@ ${compositeKeys
         (k) => `
 $util.qr($ctx.args.input.put("${k.fields.slice(1).join("#")}","${k.fields
             .slice(1)
-            .map((k) => `\${${k}}`)
+            .map((k) => `\${ctx.args.input.${k}}`)
             .join("#")}"))
 `
       )
@@ -1670,18 +1792,25 @@ const buildHasOne = (yours: string, mine: string, typeName: string) => {
   ];
 };
 
-const buildHasMany = (yours: string, mine: string, indexName: string, typeName: string) => {
+const buildHasMany = (belongingKey: string, foreignKey: string, indexName: string, typeName: string, sortableWith?: string[]) => {
+  if (sortableWith) {
+    return [
+      buildHasManyQueryListReq(belongingKey, foreignKey, indexName, typeName, sortableWith),
+      buildHasManyRes(typeName)
+    ]
+  }
+
   return [
     `
 #set( $limit = $util.defaultIfNull($context.args.limit, 100) )
 #set( $query = {
   "expression": "#connectionAttribute = :connectionAttribute",
   "expressionNames": {
-      "#connectionAttribute": "${yours}"
+      "#connectionAttribute": "${foreignKey}"
   },
   "expressionValues": {
       ":connectionAttribute": {
-          "S": "$context.source.${mine}"
+          "S": "$context.source.${belongingKey}"
     }
   }
 } )
@@ -1715,6 +1844,235 @@ null
     buildHasManyRes(typeName),
   ];
 };
+
+
+const buildHasManyQueryListReq = (belongingKey: string, foreignKey: string, indexName: string, typeName: string, sortableWith: string[]): string => {
+  const keySpec: KeySpec = {
+    fields: [foreignKey, ...sortableWith],
+    name: indexName
+  }
+  if (keySpec.fields.length === 2) {
+    return `
+##[Start] Set query expression for @key **
+#set($modelQueryExpression = {})
+#if(!$util.isNull($ctx.source.${belongingKey}))
+  #set($modelQueryExpression.expression = "#${foreignKey} = :${belongingKey}")
+  #set($modelQueryExpression.expressionNames = {
+  "#${foreignKey}": "${foreignKey}"
+})
+  #set($modelQueryExpression.expressionValues = {
+  ":${belongingKey}": {
+    "S": "$ctx.source.${belongingKey}"
+  }
+})
+#end
+##[Start] Applying Key Condition **
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.beginsWith))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND begins_with(#sortKey, :sortKey)")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.beginsWith" }))
+#end
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.between))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey BETWEEN :sortKey0 AND :sortKey1")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey0", { "S": "$ctx.args.${keySpec.fields[1]}.between[0]" }))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey1", { "S": "$ctx.args.${keySpec.fields[1]}.between[1]" }))
+#end
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.eq))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey = :sortKey")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.eq" }))
+#end
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.lt))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey < :sortKey")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.lt" }))
+#end
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.le))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey <= :sortKey")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.le" }))
+#end
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.gt))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey > :sortKey")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.gt" }))
+#end
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.ge))
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey >= :sortKey")
+$util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
+$util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.ge" }))
+#end
+##[End] Applying Key Condition **
+##[End] Set query expression for @key **
+#set($limit = $util.defaultIfNull($context.args.limit, 100))
+#set($QueryRequest = {
+  "version": "2017-02-28",
+  "operation": "Query",
+  "limit": $limit,
+  "query": $modelQueryExpression,
+  "index": "${keySpec.name}"
+})
+#if(!$util.isNull($ctx.args.sortDirection)
+  && $ctx.args.sortDirection == "DESC")
+  #set($QueryRequest.scanIndexForward = false)
+#else
+  #set($QueryRequest.scanIndexForward = true)
+#end
+#if($context.args.nextToken) #set($QueryRequest.nextToken = $context.args.nextToken) #end
+#if($context.args.filter) #set($QueryRequest.filter = $util.parseJson("$util.transform.toDynamoDBFilterExpression($ctx.args.filter)")) #end
+$util.toJson($QueryRequest)
+  `;
+  }
+  const compositeKey =
+    keySpec.fields[1] +
+    keySpec.fields
+      .slice(2)
+      .map((f) => f[0].toUpperCase() + f.slice(1))
+      .join("");
+  return `
+##[Start] Set query expression for @key **
+#set($modelQueryExpression = {})
+#if(!$util.isNull($ctx.source.${belongingKey}))
+  #set($modelQueryExpression.expression = "#${foreignKey} = :${belongingKey}" )
+  #set($modelQueryExpression.expressionNames = {
+    "#${foreignKey}": "${foreignKey}"
+  })
+  #set($modelQueryExpression.expressionValues = {
+    ":${belongingKey}": {
+      "S": "$ctx.source.${belongingKey}"
+    }
+  })
+#end
+##[Start] Applying Key Condition **
+#set($sortKeyValue = "")
+#set($sortKeyValue2 = "")
+#if(!$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.beginsWith))
+  #if(!$util.isNull($ctx.args.${compositeKey}.beginsWith.${
+    keySpec.fields[1]
+    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.beginsWith.${
+    keySpec.fields[1]
+    }" ) #end
+  ${
+    keySpec.fields
+      .slice(1)
+      .map(
+        (f) => `
+  #if( !$util.isNull($ctx.args.${compositeKey}.beginsWith.${f}) ) #set( $sortKeyValue = "$sortKeyValue#$ctx.args.${compositeKey}.beginsWith.${f}" ) #end
+  `
+      )
+      .join("\n")
+    }
+  #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND begins_with(#sortKey, :sortKey)")
+  $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields
+      .slice(1)
+      .join("#")}"))
+  $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$sortKeyValue" }))
+#end
+#if(!$util.isNull($ctx.args.${ compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.between))
+  #if($ctx.args.${ compositeKey}.between.size() != 2)
+    $util.error("Argument ${compositeKey}.between expects exactly 2 elements.")
+  #end
+  #if(!$util.isNull($ctx.args.${ compositeKey}.between[0].${
+    keySpec.fields[1]
+    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.between[0].${
+    keySpec.fields[1]
+    }" ) #end
+  ${
+    keySpec.fields
+      .slice(2)
+      .map(
+        (f) => `
+  #if( !$util.isNull($ctx.args.${compositeKey}.between[0].${f}) ) #set( $sortKeyValue = "$sortKeyValue#$ctx.args.${compositeKey}.between[0].${f}" ) #end
+  `
+      )
+      .join("\n")
+    }
+  #if(!$util.isNull($ctx.args.${ compositeKey}.between[1].${
+    keySpec.fields[1]
+    })) #set($sortKeyValue2 = "$ctx.args.${compositeKey}.between[1].${
+    keySpec.fields[1]
+    }" ) #end
+  ${
+    keySpec.fields
+      .slice(2)
+      .map(
+        (f) => `
+  #if( !$util.isNull($ctx.args.${compositeKey}.between[1].${f}) ) #set( $sortKeyValue2 = "$sortKeyValue2#$ctx.args.${compositeKey}.between[1].${f}" ) #end
+  `
+      )
+      .join("\n")
+    }
+    #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey BETWEEN :sortKey0 AND :sortKey1")
+    $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields
+      .slice(1)
+      .join("#")}"))
+    $util.qr($modelQueryExpression.expressionValues.put(":sortKey0", { "S": "$sortKeyValue" }))
+    $util.qr($modelQueryExpression.expressionValues.put(":sortKey1", { "S": "$sortKeyValue2" }))
+#end
+${
+    ["eq", "lt", "gt", "le", "ge"]
+      .map(
+        (operator) => `
+#if( !$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.${operator}) )
+  #if( !$util.isNull($ctx.args.${compositeKey}.${operator}.${
+          keySpec.fields[1]
+          }) ) #set( $sortKeyValue = "$ctx.args.${compositeKey}.${operator}.${
+          keySpec.fields[1]
+          }" ) #end
+  ${keySpec.fields
+            .slice(2)
+            .map(
+              (f) => `
+  #if( !$util.isNull($ctx.args.${compositeKey}.${operator}.${f}) ) #set( $sortKeyValue = "$sortKeyValue#$ctx.args.${compositeKey}.${operator}.${f}" ) #end
+  `
+            )
+            .join("\n")}
+  #set( $modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey ${(() => {
+            switch (operator) {
+              case "eq":
+                return "=";
+              case "lt":
+                return "<";
+              case "le":
+                return "<=";
+              case "gt":
+                return ">";
+              case "ge":
+                return ">=";
+            }
+          })()} :sortKey" )
+  $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields
+            .slice(1)
+            .join("#")}"))
+  $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$sortKeyValue" }))
+#end
+  `
+      )
+      .join("\n")
+    }
+##[End] Applying Key Condition **
+##[End] Set query expression for @key **
+#set($limit = $util.defaultIfNull($context.args.limit, 100))
+#set($QueryRequest = {
+      "version": "2017-02-28",
+      "operation": "Query",
+      "limit": $limit,
+      "query": $modelQueryExpression,
+      "index": "${keySpec.name}"
+    })
+#if(!$util.isNull($ctx.args.sortDirection)
+      && $ctx.args.sortDirection == "DESC")
+  #set($QueryRequest.scanIndexForward = false)
+#else
+  #set($QueryRequest.scanIndexForward = true)
+#end
+#if($context.args.nextToken) #set($QueryRequest.nextToken = $context.args.nextToken) #end
+#if($context.args.filter) #set($QueryRequest.filter = $util.parseJson("$util.transform.toDynamoDBFilterExpression($ctx.args.filter)")) #end
+$util.toJson($QueryRequest)
+  `;
+};
+
 
 const buildHasManyRes = (target: string) => {
   return `

@@ -45,6 +45,9 @@ export class ConnectionDirective implements IDirective {
         (args.find((a) => a.name === "foreignKey")?.value as string) ||
         undefined,
       node: node,
+      sortableWith:
+        (args.find((a) => a.name === "sortableWith")?.value as string[]) ||
+        undefined,
     });
   }
 }
