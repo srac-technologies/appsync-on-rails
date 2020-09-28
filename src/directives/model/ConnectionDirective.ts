@@ -48,6 +48,7 @@ export class ConnectionDirective implements IDirective {
       sortableWith:
         (args.find((a) => a.name === "sortableWith")?.value as string[]) ||
         undefined,
+      custom: (args.find((a) => a.name === "custom")?.value as boolean) || false
     });
   }
 }

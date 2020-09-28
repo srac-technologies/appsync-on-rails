@@ -1,16 +1,14 @@
 import {
-  DocumentNode,
   FieldDefinitionNode,
   InputValueDefinitionNode,
   Kind,
   ObjectTypeDefinitionNode,
-  print,
+  print
 } from "graphql";
+import { ResourceDefinition } from "../interfaces/resource/IResource";
 import { Printable } from "../interfaces/resource/Printable";
 import { args } from "../io/CliArgs";
-import { DiggerUtils, unTypeEasy, typeEasy } from "../utils/DiggerUtils";
-import { ResourceDefinition } from "../interfaces/resource/IResource";
-import { type } from "os";
+import { DiggerUtils, typeEasy, unTypeEasy } from "../utils/DiggerUtils";
 
 export type KeySpec = {
   name?: string;
@@ -24,6 +22,7 @@ export type ConnectionSpec = {
   foreignKey?: string;
   node: FieldDefinitionNode;
   sortableWith?: string[];
+  custom: boolean;
 };
 
 
@@ -329,6 +328,7 @@ export class TableResource implements Printable {
       ...this.connections.map((c) => ({
         location: `mapping-templates/${this.tableName}.${c.node.name.value}.request.vtl`,
         path: "",
+        noReplace: c.custom,
         resource: c.hasMany
           ? buildHasMany(
             this.primaryKey.fields[0] || "",
@@ -346,6 +346,7 @@ export class TableResource implements Printable {
       ...this.connections.map((c) => ({
         location: `mapping-templates/${this.tableName}.${c.node.name.value}.response.vtl`,
         path: "",
+        noReplace: c.custom,
         resource: c.hasMany
           ? buildHasMany(
             this.primaryKey.fields[0] || "",
@@ -449,8 +450,7 @@ const buildHasManyConnectionArguments = (c: ConnectionSpec) => {
         type: {
           kind: "NamedType",
           name: {
-            value: `Model${
-              unTypeEasy(c.node).baseTypeName
+            value: `Model${unTypeEasy(c.node).baseTypeName
               }FilterInput`,
             kind: "Name",
           },
@@ -499,8 +499,7 @@ const buildHasManyConnectionArguments = (c: ConnectionSpec) => {
       type: {
         kind: "NamedType",
         name: {
-          value: `Model${
-            unTypeEasy(c.node).baseTypeName
+          value: `Model${unTypeEasy(c.node).baseTypeName
             }FilterInput`,
           kind: "Name",
         },
@@ -512,8 +511,7 @@ const buildHasManyConnectionArguments = (c: ConnectionSpec) => {
       type: {
         kind: "NamedType",
         name: {
-          value: `Model${
-            c.name
+          value: `Model${c.name
             }${c.sortableWith.length === 1 ? 'KeyCondition' : 'CompositeKeyCondition'}Input`,
           kind: "Name",
         },
@@ -601,7 +599,7 @@ const buildGSIs = (
               WriteCapacityUnits: 5,
             },
           })),
-        ...belongsTos.map((b) => ({
+        ...belongsTos.filter(b => !b.custom).map((b) => ({
           IndexName: b.name,
           KeySchema: [
             {
@@ -744,8 +742,7 @@ const buildSortKeyQueryOperations = (typeName: string, keySpecs: KeySpec[], auth
         if (keySpec.fields.length === 2) {
           return `${keySpec.fields[0]}: String,  ${keySpec.fields[1]}: ModelStringConditionInput`;
         }
-        return `${keySpec.fields[0]}: String,  ${
-          keySpec.fields[1]
+        return `${keySpec.fields[0]}: String,  ${keySpec.fields[1]
           }${keySpec.fields
             .slice(2)
             .map((f) => f[0].toUpperCase() + f.slice(1))
@@ -921,6 +918,9 @@ const buildCrudOperations = (
               (f) =>
                 !connections.some(
                   (c) => c.node.name.value === f.name.value && c.hasMany
+                ) &&
+                !connections.some(
+                  (c) => c.node.name.value === f.name.value && c.custom
                 )
             )
 
@@ -971,6 +971,10 @@ const buildCrudOperations = (
             (f) =>
               !connections.some(
                 (c) => c.node.name.value === f.name.value && c.hasMany
+              )
+              &&
+              !connections.some(
+                (c) => c.node.name.value === f.name.value && c.custom
               )
           )
           .map((f) => {
@@ -1040,6 +1044,10 @@ const buildCrudOperations = (
             (f) =>
               !connections.some(
                 (c) => c.node.name.value === f.name.value && c.hasMany
+              )
+              &&
+              !connections.some(
+                (c) => c.node.name.value === f.name.value && c.custom
               )
           )
           .map((f) => {
@@ -1447,8 +1455,7 @@ const buildCreateReq = (
     primaryKey.fields.slice(1).join("#"),
   ].filter((a) => !!a);
   return `
-${
-    (keys.length === 2 &&
+${(keys.length === 2 &&
       `
  ## [Start] Set the primary @key. **
 #set( $modelObjectKey = {
@@ -1504,10 +1511,8 @@ $util.qr($ctx.args.input.put("${k.fields.slice(1).join("#")}","${k.fields
   "version": "2017-02-28",
   "operation": "PutItem",
   "key": #if( $modelObjectKey ) $util.toJson($modelObjectKey) #else {
-  "${
-    keys[0]
-    }":   $util.dynamodb.toDynamoDBJson($util.defaultIfNullOrBlank($ctx.args.input.${
-    keys[0]
+  "${keys[0]
+    }":   $util.dynamodb.toDynamoDBJson($util.defaultIfNullOrBlank($ctx.args.input.${keys[0]
     }, $util.autoId()))
 } #end,
   "attributeValues": $util.dynamodb.toMapValuesJson($context.args.input),
@@ -1948,13 +1953,10 @@ $util.toJson($QueryRequest)
 #set($sortKeyValue = "")
 #set($sortKeyValue2 = "")
 #if(!$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.beginsWith))
-  #if(!$util.isNull($ctx.args.${compositeKey}.beginsWith.${
-    keySpec.fields[1]
-    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.beginsWith.${
-    keySpec.fields[1]
+  #if(!$util.isNull($ctx.args.${compositeKey}.beginsWith.${keySpec.fields[1]
+    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.beginsWith.${keySpec.fields[1]
     }" ) #end
-  ${
-    keySpec.fields
+  ${keySpec.fields
       .slice(1)
       .map(
         (f) => `
@@ -1969,17 +1971,14 @@ $util.toJson($QueryRequest)
       .join("#")}"))
   $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$sortKeyValue" }))
 #end
-#if(!$util.isNull($ctx.args.${ compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.between))
-  #if($ctx.args.${ compositeKey}.between.size() != 2)
+#if(!$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.between))
+  #if($ctx.args.${compositeKey}.between.size() != 2)
     $util.error("Argument ${compositeKey}.between expects exactly 2 elements.")
   #end
-  #if(!$util.isNull($ctx.args.${ compositeKey}.between[0].${
-    keySpec.fields[1]
-    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.between[0].${
-    keySpec.fields[1]
+  #if(!$util.isNull($ctx.args.${compositeKey}.between[0].${keySpec.fields[1]
+    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.between[0].${keySpec.fields[1]
     }" ) #end
-  ${
-    keySpec.fields
+  ${keySpec.fields
       .slice(2)
       .map(
         (f) => `
@@ -1988,13 +1987,10 @@ $util.toJson($QueryRequest)
       )
       .join("\n")
     }
-  #if(!$util.isNull($ctx.args.${ compositeKey}.between[1].${
-    keySpec.fields[1]
-    })) #set($sortKeyValue2 = "$ctx.args.${compositeKey}.between[1].${
-    keySpec.fields[1]
+  #if(!$util.isNull($ctx.args.${compositeKey}.between[1].${keySpec.fields[1]
+    })) #set($sortKeyValue2 = "$ctx.args.${compositeKey}.between[1].${keySpec.fields[1]
     }" ) #end
-  ${
-    keySpec.fields
+  ${keySpec.fields
       .slice(2)
       .map(
         (f) => `
@@ -2010,15 +2006,12 @@ $util.toJson($QueryRequest)
     $util.qr($modelQueryExpression.expressionValues.put(":sortKey0", { "S": "$sortKeyValue" }))
     $util.qr($modelQueryExpression.expressionValues.put(":sortKey1", { "S": "$sortKeyValue2" }))
 #end
-${
-    ["eq", "lt", "gt", "le", "ge"]
+${["eq", "lt", "gt", "le", "ge"]
       .map(
         (operator) => `
 #if( !$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.${operator}) )
-  #if( !$util.isNull($ctx.args.${compositeKey}.${operator}.${
-          keySpec.fields[1]
-          }) ) #set( $sortKeyValue = "$ctx.args.${compositeKey}.${operator}.${
-          keySpec.fields[1]
+  #if( !$util.isNull($ctx.args.${compositeKey}.${operator}.${keySpec.fields[1]
+          }) ) #set( $sortKeyValue = "$ctx.args.${compositeKey}.${operator}.${keySpec.fields[1]
           }" ) #end
   ${keySpec.fields
             .slice(2)
@@ -2084,8 +2077,7 @@ $util.toJson($ctx.result)
 
 const buildHasOneRes = (target: string) => {
   return `
-  ${
-    TableResource.table(target)?.protectGetRes()
+  ${TableResource.table(target)?.protectGetRes()
     }
 #if($ctx.error)
   $util.error($ctx.error.message, $ctx.error.type)
@@ -2098,8 +2090,7 @@ $util.toJson($res)
 const buildQueryOperations = (typeName: string, keySpec: KeySpec) => {
   return `
 extend type Query {
-  ${ keySpec.queryField} (${
-    (() => {
+  ${keySpec.queryField} (${(() => {
       if (keySpec.fields.length === 1) {
         return `${keySpec.fields[0]}: String`;
       }
@@ -2123,8 +2114,7 @@ input Model${typeName}${keySpec.name}CompositeKeyConditionInput {
   beginsWith: Model${typeName}${keySpec.name}CompositeKeyInput
 }
 input Model${typeName}${keySpec.name}CompositeKeyInput {
-  ${
-    keySpec.fields
+  ${keySpec.fields
       .slice(1)
       .map((f) => `${f}: String`)
       .join("\n")
@@ -2139,11 +2129,11 @@ const buildQueryListReq = (keySpec: KeySpec): string => {
 ##[Start] Set query expression for @key **
 #set($modelQueryExpression = {})
 ##[Start] Validate key arguments. **
-#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && $util.isNull($ctx.args.${keySpec.fields[0]}))
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && $util.isNull($ctx.args.${keySpec.fields[0]}))
 $util.error("When providing argument '${keySpec.fields[1]}' you must also provide arguments ${keySpec.fields[0]}", "InvalidArgumentsError")
 #end
 ##[End] Validate key arguments. **
-#if(!$util.isNull($ctx.args.${ keySpec.fields[0]}))
+#if(!$util.isNull($ctx.args.${keySpec.fields[0]}))
   #set($modelQueryExpression.expression = "#${keySpec.fields[0]} = :${keySpec.fields[0]}")
   #set($modelQueryExpression.expressionNames = {
   "#${keySpec.fields[0]}": "${keySpec.fields[0]}"
@@ -2155,38 +2145,38 @@ $util.error("When providing argument '${keySpec.fields[1]}' you must also provid
 })
 #end
 ##[Start] Applying Key Condition **
-#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.beginsWith))
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.beginsWith))
   #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND begins_with(#sortKey, :sortKey)")
 $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
 $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.beginsWith" }))
 #end
-#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.between))
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.between))
   #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey BETWEEN :sortKey0 AND :sortKey1")
 $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
 $util.qr($modelQueryExpression.expressionValues.put(":sortKey0", { "S": "$ctx.args.${keySpec.fields[1]}.between[0]" }))
 $util.qr($modelQueryExpression.expressionValues.put(":sortKey1", { "S": "$ctx.args.${keySpec.fields[1]}.between[1]" }))
 #end
-#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.eq))
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.eq))
   #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey = :sortKey")
 $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
 $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.eq" }))
 #end
-#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.lt))
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.lt))
   #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey < :sortKey")
 $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
 $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.lt" }))
 #end
-#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.le))
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.le))
   #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey <= :sortKey")
 $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
 $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.le" }))
 #end
-#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.gt))
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.gt))
   #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey > :sortKey")
 $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
 $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.gt" }))
 #end
-#if(!$util.isNull($ctx.args.${ keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.ge))
+#if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && !$util.isNull($ctx.args.${keySpec.fields[1]}.ge))
   #set($modelQueryExpression.expression = "$modelQueryExpression.expression AND #sortKey >= :sortKey")
 $util.qr($modelQueryExpression.expressionNames.put("#sortKey", "${keySpec.fields[1]}"))
 $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$ctx.args.${keySpec.fields[1]}.ge" }))
@@ -2221,9 +2211,8 @@ $util.toJson($QueryRequest)
   return `
 ##[Start] Set query expression for @key **
 #set($modelQueryExpression = {})
-#if(!$util.isNull($ctx.args.${ keySpec.fields[0]}))
-  #set($modelQueryExpression.expression = "#${keySpec.fields[0]} = :${
-    keySpec.fields[0]
+#if(!$util.isNull($ctx.args.${keySpec.fields[0]}))
+  #set($modelQueryExpression.expression = "#${keySpec.fields[0]} = :${keySpec.fields[0]
     }" )
   #set($modelQueryExpression.expressionNames = {
     "#${keySpec.fields[0]}": "${keySpec.fields[0]}"
@@ -2237,14 +2226,11 @@ $util.toJson($QueryRequest)
 ##[Start] Applying Key Condition **
 #set($sortKeyValue = "")
 #set($sortKeyValue2 = "")
-#if(!$util.isNull($ctx.args.${ compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.beginsWith))
-  #if(!$util.isNull($ctx.args.${ compositeKey}.beginsWith.${
-    keySpec.fields[1]
-    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.beginsWith.${
-    keySpec.fields[1]
+#if(!$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.beginsWith))
+  #if(!$util.isNull($ctx.args.${compositeKey}.beginsWith.${keySpec.fields[1]
+    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.beginsWith.${keySpec.fields[1]
     }" ) #end
-  ${
-    keySpec.fields
+  ${keySpec.fields
       .slice(1)
       .map(
         (f) => `
@@ -2259,17 +2245,14 @@ $util.toJson($QueryRequest)
       .join("#")}"))
   $util.qr($modelQueryExpression.expressionValues.put(":sortKey", { "S": "$sortKeyValue" }))
 #end
-#if(!$util.isNull($ctx.args.${ compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.between))
-  #if($ctx.args.${ compositeKey}.between.size() != 2)
+#if(!$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.between))
+  #if($ctx.args.${compositeKey}.between.size() != 2)
     $util.error("Argument ${compositeKey}.between expects exactly 2 elements.")
   #end
-  #if(!$util.isNull($ctx.args.${ compositeKey}.between[0].${
-    keySpec.fields[1]
-    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.between[0].${
-    keySpec.fields[1]
+  #if(!$util.isNull($ctx.args.${compositeKey}.between[0].${keySpec.fields[1]
+    })) #set($sortKeyValue = "$ctx.args.${compositeKey}.between[0].${keySpec.fields[1]
     }" ) #end
-  ${
-    keySpec.fields
+  ${keySpec.fields
       .slice(2)
       .map(
         (f) => `
@@ -2278,13 +2261,10 @@ $util.toJson($QueryRequest)
       )
       .join("\n")
     }
-  #if(!$util.isNull($ctx.args.${ compositeKey}.between[1].${
-    keySpec.fields[1]
-    })) #set($sortKeyValue2 = "$ctx.args.${compositeKey}.between[1].${
-    keySpec.fields[1]
+  #if(!$util.isNull($ctx.args.${compositeKey}.between[1].${keySpec.fields[1]
+    })) #set($sortKeyValue2 = "$ctx.args.${compositeKey}.between[1].${keySpec.fields[1]
     }" ) #end
-  ${
-    keySpec.fields
+  ${keySpec.fields
       .slice(2)
       .map(
         (f) => `
@@ -2300,15 +2280,12 @@ $util.toJson($QueryRequest)
     $util.qr($modelQueryExpression.expressionValues.put(":sortKey0", { "S": "$sortKeyValue" }))
     $util.qr($modelQueryExpression.expressionValues.put(":sortKey1", { "S": "$sortKeyValue2" }))
 #end
-${
-    ["eq", "lt", "gt", "le", "ge"]
+${["eq", "lt", "gt", "le", "ge"]
       .map(
         (operator) => `
 #if( !$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.${operator}) )
-  #if( !$util.isNull($ctx.args.${compositeKey}.${operator}.${
-          keySpec.fields[1]
-          }) ) #set( $sortKeyValue = "$ctx.args.${compositeKey}.${operator}.${
-          keySpec.fields[1]
+  #if( !$util.isNull($ctx.args.${compositeKey}.${operator}.${keySpec.fields[1]
+          }) ) #set( $sortKeyValue = "$ctx.args.${compositeKey}.${operator}.${keySpec.fields[1]
           }" ) #end
   ${keySpec.fields
             .slice(2)

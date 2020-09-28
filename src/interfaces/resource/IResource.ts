@@ -3,4 +3,5 @@ export type ResourceDefinition = {
   location: string;
   path: string | Digger;
   resource: any;
+  noReplace?: boolean;
 };

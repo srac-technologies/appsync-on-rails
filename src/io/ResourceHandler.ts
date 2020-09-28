@@ -8,7 +8,7 @@ export class ResourceHandler {
   constructor(
     private resources: ResourceDefinition[],
     private basePath: string
-  ) {}
+  ) { }
 
   print() {
     // group order
@@ -25,6 +25,7 @@ export class ResourceHandler {
         return {
           path: path.join(this.basePath, p),
           body: this.resolveYaml(p, defs),
+          noReplace: defs.some(d => d.noReplace)
         };
       }
       if (path.extname(p) === ".graphql") {
@@ -32,11 +33,13 @@ export class ResourceHandler {
         return {
           path: path.join(this.basePath, p),
           body,
+          noReplace: defs.some(d => d.noReplace)
         };
       }
       return {
         path: path.join(this.basePath, p),
         body: defs.map((d) => d.resource.toString()).join("\n"),
+        noReplace: defs.some(d => d.noReplace)
       };
     });
   }
@@ -70,10 +73,10 @@ export class ResourceHandler {
   resolveYaml(filePath: string, definitions: ResourceDefinition[]) {
     const orig = FsProxy.instance.existsSync(path.join(this.basePath, filePath))
       ? yaml.parse(
-          FsProxy.instance.readFileSync(path.join(this.basePath, filePath), {
-            encoding: "utf-8",
-          })
-        )
+        FsProxy.instance.readFileSync(path.join(this.basePath, filePath), {
+          encoding: "utf-8",
+        })
+      )
       : {};
     return yaml.stringify(
       definitions.reduce((res, def) => {
@@ -83,30 +86,30 @@ export class ResourceHandler {
         const digger: (parent: any) => (value: any) => any =
           typeof def.path === "string"
             ? (parent: any) => {
-                const lastOne = (<string>def.path)
-                  .split("#")
-                  .slice(0, -1)
-                  .reduce((from, loc) => {
-                    if (loc in from) {
-                      return from[loc];
-                    }
-                    from[loc] = {};
+              const lastOne = (<string>def.path)
+                .split("#")
+                .slice(0, -1)
+                .reduce((from, loc) => {
+                  if (loc in from) {
                     return from[loc];
-                  }, parent);
-                const lastPath = (<string>def.path).split("#").pop();
-                return (value: any) => {
-                  if (
-                    lastPath &&
-                    lastPath in lastOne &&
-                    lastOne[lastPath].length
-                  ) {
-                    lastOne[lastPath].push(value);
-                    return parent;
                   }
-                  lastPath && (lastOne[lastPath] = value);
+                  from[loc] = {};
+                  return from[loc];
+                }, parent);
+              const lastPath = (<string>def.path).split("#").pop();
+              return (value: any) => {
+                if (
+                  lastPath &&
+                  lastPath in lastOne &&
+                  lastOne[lastPath].length
+                ) {
+                  lastOne[lastPath].push(value);
                   return parent;
-                };
-              }
+                }
+                lastPath && (lastOne[lastPath] = value);
+                return parent;
+              };
+            }
             : def.path;
         return digger(res)(def.resource);
       }, orig),

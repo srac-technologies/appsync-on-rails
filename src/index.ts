@@ -21,7 +21,7 @@ new ResourceHandler(Resources.reduce((res: Printable[], r) => [...res, ...r.inst
     if (!fs.existsSync(path.dirname(resource.path))) {
       fs.mkdirSync(path.dirname(resource.path), { recursive: true });
     }
-    if (!fs.existsSync(resource.path) || !args["append-only"]) {
+    if (!fs.existsSync(resource.path) || (!args["append-only"] && !resource.noReplace)) {
       fs.writeFileSync(resource.path, resource.body);
     }
   });
