@@ -19,6 +19,6 @@ export class ModelDirective implements IDirective {
     ) {
       return false;
     }
-    new TableResource(node.name.value, "DYNAMODB", node) // automatically register
+    new TableResource(node.name.value, "DYNAMODB", node, context.getRoot()) // automatically register
   }
 }

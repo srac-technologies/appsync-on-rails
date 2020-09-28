@@ -1,6 +1,9 @@
 import {
+  DocumentNode,
   FieldDefinitionNode,
   InputValueDefinitionNode,
+
+
   Kind,
   ObjectTypeDefinitionNode,
   print
@@ -60,7 +63,6 @@ export type AuthBaseSpec = {
 
 export type AuthSpec = (AuthUserPoolsSpec | AuthKeySpec | AuthIamSpec) & AuthBaseSpec
 
-
 export class TableResource implements Printable {
   get primaryKey() {
     return this.keys.find((k) => !k.name) || { fields: ["id"] };
@@ -91,8 +93,8 @@ export class TableResource implements Printable {
   constructor(
     private tableName: string,
     private provider: "DYNAMODB" | "AURORA_MYSQL",
-    private typeNode: ObjectTypeDefinitionNode
-  ) {
+    private typeNode: ObjectTypeDefinitionNode,
+    private context: DocumentNode) {
     TableResource.instances.push(this);
   }
 
@@ -282,7 +284,8 @@ export class TableResource implements Printable {
           this.typeNode,
           this.keys.filter((k) => k.name),
           this.connections,
-          this.authSpec.self
+          this.authSpec.self,
+          this.context
         ),
       },
       {
@@ -833,7 +836,8 @@ const buildCrudOperations = (
   typeNode: ObjectTypeDefinitionNode,
   sortKeys: KeySpec[],
   connections: ConnectionSpec[],
-  authSpec: AuthSpec[]
+  authSpec: AuthSpec[],
+  context: DocumentNode
 ) => {
   const keyOperations = buildSortKeyQueryOperations(typeName, sortKeys, authSpec);
   const connectionKeys = buildConnectionKeyInputs(connections);
@@ -869,6 +873,11 @@ const buildCrudOperations = (
                 !connections.some(
                   (c) => c.node.name.value === f.name.value && c.hasMany
                 )
+                &&
+                !connections.some(
+                  (c) => c.node.name.value === f.name.value && c.custom
+                )
+                && !context.definitions.some(d => d.kind === 'ObjectTypeDefinition' && d.name.value === unTypeEasy(f).baseTypeName)
             )
             .map((f) => makeTypeModelInput(typeName, f, connections)),
           {
@@ -922,8 +931,8 @@ const buildCrudOperations = (
                 !connections.some(
                   (c) => c.node.name.value === f.name.value && c.custom
                 )
+                && !context.definitions.some(d => d.kind === 'ObjectTypeDefinition' && d.name.value === unTypeEasy(f).baseTypeName)
             )
-
             .map((f) => makeTypeModelInput(typeName, f, connections)),
           {
             kind: Kind.INPUT_VALUE_DEFINITION,
@@ -1014,18 +1023,13 @@ const buildCrudOperations = (
               }
               : {
                 ...f,
-                type:
-                  f.type.kind === "NonNullType" &&
-                    f.type.type.kind === "NamedType" &&
-                    f.type.type.name.value === "ID"
-                    ? {
-                      kind: "NamedType",
-                      name: {
-                        kind: "Name",
-                        value: "ID",
-                      },
-                    }
-                    : f.type,
+                type: (() => {
+                  const t = unTypeEasy(f)
+                  return typeEasy({
+                    ...t,
+                    baseTypeName: context.definitions.some(d => d.kind === 'ObjectTypeDefinition' && d.name.value === t.baseTypeName) ? t.baseTypeName + 'Input' : t.baseTypeName
+                  })
+                })(),
                 kind: "InputValueDefinition",
                 directives: (f.directives || []).filter(
                   (d) => d.name.value !== "connection"
@@ -1091,6 +1095,13 @@ const buildCrudOperations = (
                 directives: (f.directives || []).filter(
                   (d) => d.name.value !== "connection"
                 ),
+                type: (() => {
+                  const t = unTypeEasy(f)
+                  return typeEasy({
+                    ...t,
+                    baseTypeName: context.definitions.some(d => d.kind === 'ObjectTypeDefinition' && d.name.value === t.baseTypeName) ? t.baseTypeName + 'Input' : t.baseTypeName
+                  })
+                })(),
               };
           }),
       })}
