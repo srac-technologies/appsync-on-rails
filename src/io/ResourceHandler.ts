@@ -6,8 +6,7 @@ import { FsProxy } from "./FsProxy";
 
 export class ResourceHandler {
   constructor(
-    private resources: ResourceDefinition[],
-    private basePath: string
+    private resources: ResourceDefinition[]
   ) { }
 
   print() {
@@ -23,7 +22,7 @@ export class ResourceHandler {
     return Object.entries(resources).map(([p, defs]) => {
       if (path.extname(p) === ".yml") {
         return {
-          path: path.join(this.basePath, p),
+          path: p,
           body: this.resolveYaml(p, defs),
           noReplace: defs.some(d => d.noReplace)
         };
@@ -31,13 +30,13 @@ export class ResourceHandler {
       if (path.extname(p) === ".graphql") {
         const body = print(this.resolveSchema(p, defs));
         return {
-          path: path.join(this.basePath, p),
+          path: p,
           body,
           noReplace: defs.some(d => d.noReplace)
         };
       }
       return {
-        path: path.join(this.basePath, p),
+        path: p,
         body: defs.map((d) => d.resource.toString()).join("\n"),
         noReplace: defs.some(d => d.noReplace)
       };
@@ -71,9 +70,9 @@ export class ResourceHandler {
   }
 
   resolveYaml(filePath: string, definitions: ResourceDefinition[]) {
-    const orig = FsProxy.instance.existsSync(path.join(this.basePath, filePath))
+    const orig = FsProxy.instance.existsSync(filePath)
       ? yaml.parse(
-        FsProxy.instance.readFileSync(path.join(this.basePath, filePath), {
+        FsProxy.instance.readFileSync(filePath, {
           encoding: "utf-8",
         })
       )

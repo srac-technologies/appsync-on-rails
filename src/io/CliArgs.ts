@@ -4,7 +4,7 @@ import { type } from "os";
 
 export const args = yargs
   .option("base-dir", {
-    description: "base dir of project. usually with package.json",
+    description: "base dir of source.",
     defaultDescription: "process.cwd()",
     default: process.cwd(),
   })
@@ -29,6 +29,11 @@ export const args = yargs
     defaultDescription: "false",
     default: false,
     boolean: true,
+  }).option("build-dir", {
+    description:
+      "directory to place build output",
+    defaultDescription: "./build",
+    default: './build',
   })
   .option("types", {
     description:
