@@ -46,7 +46,6 @@ export class ResourceHandler {
   resolveSchema(filePath: string, definitions: ResourceDefinition[]) {
     return definitions.reduce(
       (res, def) => {
-        console.log(res, def.resource);
         if (!def.path) {
           try {
             return typeof def.resource === "string"

@@ -138,7 +138,6 @@ export class TableResource implements Printable {
   }
 
   print() {
-    // console.log(this);
     return [...this.printPersistanceLayer(), ...this.printGraphqlLayer()];
   }
 

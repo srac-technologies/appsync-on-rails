@@ -24,7 +24,6 @@ export class KeyDirective implements IDirective {
             name: args.find(a => a.name === 'name')?.value as string,
             queryField: args.find(a => a.name === 'queryField')?.value as string,
         }
-        console.log(keySpec.name)
 
         TableResource.table(node.name.value)?.addKey(keySpec)
     }

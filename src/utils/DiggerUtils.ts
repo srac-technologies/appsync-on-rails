@@ -43,7 +43,7 @@ export namespace DiggerUtils {
           (d) => d.kind === "ObjectTypeDefinition" && d.name.value === typeName
         );
         if (preservedOrder < 0) {
-          console.log(
+          console.warn(
             typeName,
             inp.definitions.map((d: any) => d["name"]["value"])
           );
@@ -88,7 +88,7 @@ export namespace DiggerUtils {
           (d) => d.kind === "ObjectTypeDefinition" && d.name.value === typeName
         );
         if (preservedOrder < 0) {
-          console.log(
+          console.warn(
             typeName,
             inp.definitions.map((d: any) => d["name"]["value"])
           );
