@@ -171,10 +171,7 @@ export class TableResource implements Printable {
                           this.keys.find((k) => !k.name)?.fields || ["id"]
                         ),
                       ],
-                      ProvisionedThroughput: {
-                        ReadCapacityUnits: 5,
-                        WriteCapacityUnits: 5,
-                      },
+                      BillingMode: "PAY_PER_REQUEST"
                     },
                   },
                   this.tableName
