@@ -1737,7 +1737,7 @@ const buildDeleteReq = (typeName: string, primaryKey: KeySpec) => {
   #else
     #set( $condition = {
   "expression": "${keys
-      .map((f, i) => `attribute_not_exists(#id${i})`)
+      .map((f, i) => `attribute_exists(#id${i})`)
       .join(" AND ")}",
   "expressionNames": {
     ${keys.map((f, i) => `"#id${i}": "${f}"`).join(",\n")}
