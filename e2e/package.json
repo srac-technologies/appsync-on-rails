@@ -1,0 +1,16 @@
+{
+  "name": "test-project",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "serverless offline start --stage local"
+  },
+  "devDependencies": {
+    "serverless": "^2.15.0",
+    "serverless-appsync-plugin": "^1.4.0",
+    "serverless-appsync-simulator": "^0.9.0",
+    "serverless-dynamodb-local": "^0.2.39",
+    "serverless-offline": "^6.8.0"
+  }
+}

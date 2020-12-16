@@ -1,0 +1,53 @@
+service:
+  name: test-project
+
+plugins:
+  - serverless-appsync-simulator
+  - serverless-offline
+  - serverless-dynamodb-local
+  - serverless-appsync-plugin
+
+custom:
+  serverless-offline:
+    port: 3002
+  appsync-simulator:
+    location: ".webpack/service"
+    apiKey: "da2-fakeApiId123456"
+  dynamodb:
+    stages:
+      - local
+    start:
+      port: 8000
+      inMemory: true
+      migrate: true
+      seed: true
+    seed:
+      local:
+        sources:
+          - table: Test_local
+            sources: [./seeds/Test.json]
+  appSync:
+    name: test
+    authenticationType: AWS_IAM
+    schema: ${file(./graphql/schema.js)}
+    dataSources: ${file(./graphql/datasource.js)}
+    functionConfigurations: ${file(./graphql/function.js)}
+    mappingTemplatesLocation: graphql/build/mapping-templates
+    mappingTemplates: ${file(./graphql/mapping.js)}
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  region: ap-northeast-1
+  stage: ${opt:stage}
+  environment:
+    AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+    STAGE: ${self:provider.stage}
+    GRAPHQL_ENDPOINT: !GetAtt ["GraphQlApi", "GraphQLUrl"]
+
+functions:
+  getInt:
+    handler: src/handler.getInt
+
+resources:
+  - ${file(./graphql/db.js)}

@@ -63,13 +63,18 @@ export namespace DiggerUtils {
                   (<ObjectTypeDefinitionNode>inp.definitions[preservedOrder])
                     .directives || []
                 ).filter((d) => !directiveName.includes(d.name.value)), // make it idemponent
-                ...directiveName.filter((d, i, a) => a.indexOf(d) === i).map(d => (<DirectiveNode>{
-                  kind: "Directive",
-                  name: {
-                    kind: "Name",
-                    value: d
-                  },
-                }))
+                ...directiveName
+                  .filter((d, i, a) => a.indexOf(d) === i)
+                  .map(
+                    (d) =>
+                      <DirectiveNode>{
+                        kind: "Directive",
+                        name: {
+                          kind: "Name",
+                          value: d,
+                        },
+                      }
+                  ),
               ],
             },
             ...filtered.slice(preservedOrder),
@@ -306,9 +311,9 @@ export namespace DiggerUtils {
                       kind: "Directive",
                       name: {
                         kind: "Name",
-                        value: directiveName
-                      }
-                    }
+                        value: directiveName,
+                      },
+                    },
                   ],
                 },
                 ...fileteredFields.slice(preservedFieldOrder),
@@ -392,28 +397,37 @@ export const typeEasy = (type: EasyFieldType): TypeNode => {
 
   return type.required
     ? {
-      kind: "NonNullType",
-      type: {
+        kind: "NonNullType",
+        type: {
+          kind: "ListType",
+          type: listBaseType(type),
+        },
+      }
+    : {
         kind: "ListType",
+        type: listBaseType(type),
+      };
+};
+
+const listBaseType = (t: EasyFieldType): TypeNode => {
+  return t.listRequired
+    ? {
+        kind: "NonNullType",
         type: {
           kind: "NamedType",
           name: {
             kind: "Name",
-            value: type.baseTypeName,
+            value: t.baseTypeName,
           },
         },
-      },
-    }
+      }
     : {
-      kind: "ListType",
-      type: {
         kind: "NamedType",
         name: {
           kind: "Name",
-          value: type.baseTypeName,
+          value: t.baseTypeName,
         },
-      },
-    };
+      };
 };
 
 export const unTypeEasy = (type: FieldDefinitionNode) => {
@@ -423,6 +437,7 @@ export const unTypeEasy = (type: FieldDefinitionNode) => {
         required: false,
         list: false,
         baseTypeName: type.type.name.value,
+        listRequired: false,
       };
     case "NonNullType":
       switch (type.type.type.kind) {
@@ -431,13 +446,32 @@ export const unTypeEasy = (type: FieldDefinitionNode) => {
             required: true,
             list: false,
             baseTypeName: type.type.type.name.value,
+            listRequired: false,
           };
         case "ListType":
-          return {
-            required: true,
-            list: true,
-            baseTypeName: (<NamedTypeNode>type.type.type.type).name.value,
-          };
+          switch (type.type.type.type.kind) {
+            case "NamedType":
+              return {
+                required: true,
+                list: true,
+                baseTypeName: (<NamedTypeNode>type.type.type.type).name.value,
+                listRequired: false,
+              };
+            default:
+              throw new Error("");
+            case "NonNullType":
+              switch (type.type.type.type.type.kind) {
+                case "NamedType":
+                  return {
+                    required: true,
+                    list: true,
+                    baseTypeName: type.type.type.type.type.name.value,
+                    listRequired: true,
+                  };
+                default:
+                  throw new Error("");
+              }
+          }
       }
     case "ListType":
       switch (type.type.type.kind) {
@@ -446,6 +480,14 @@ export const unTypeEasy = (type: FieldDefinitionNode) => {
             required: true,
             list: true,
             baseTypeName: type.type.type.name.value,
+            listRequired: false,
+          };
+        case "NonNullType":
+          return {
+            required: true,
+            list: true,
+            baseTypeName: (<NamedTypeNode>type.type.type.type).name.value,
+            listRequired: true,
           };
       }
     default:
@@ -457,4 +499,5 @@ export type EasyFieldType = {
   required: boolean;
   list: boolean;
   baseTypeName: string;
+  listRequired: boolean;
 };

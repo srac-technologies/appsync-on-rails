@@ -6,7 +6,12 @@
   "repository": {
     "url": "https://github.com/srac-technologies/appsync-on-rails"
   },
-  "version": "0.1.0",
+  "scripts": {
+    "e2e:build": "node ./lib/index.js --base-dir ./e2e/graphql/src --build-dir ./e2e/graphql/build",
+    "test": "jest",
+    "prepublish": "tsc"
+  },
+  "version": "0.1.2",
   "main": "lib/index.js",
   "license": "MIT",
   "dependencies": {
@@ -17,9 +22,29 @@
     "yargs": "^15.4.1"
   },
   "devDependencies": {
+    "@types/jest": "^26.0.19",
     "@types/node": "^14.6.0",
     "@types/yamljs": "^0.2.31",
     "@types/yargs": "^15.0.5",
+    "jest": "^26.6.3",
+    "ts-jest": "^26.4.4",
     "typescript": "^3.9.7"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "ts",
+      "js"
+    ],
+    "transform": {
+      "^.+\\.ts$": "ts-jest"
+    },
+    "globals": {
+      "ts-jest": {
+        "tsConfig": "tsconfig.spec.json"
+      }
+    },
+    "testMatch": [
+      "**/**/*.spec.ts"
+    ]
   }
 }
