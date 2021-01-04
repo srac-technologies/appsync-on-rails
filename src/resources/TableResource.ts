@@ -240,8 +240,7 @@ export class TableResource implements Printable {
         resource: buildCreateReq(
           this.tableName,
           this.primaryKey,
-          this.keys.filter((k) => k.fields.length > 2),
-          this.uniqueFields
+          this.keys.filter((k) => k.fields.length > 2)
         ),
       },
       {
@@ -329,11 +328,6 @@ export class TableResource implements Printable {
             field: c.node.name.value,
           },
         ],
-      })),
-      ...this.uniqueFields.map((c) => ({
-        location: `schema/${args["in-schema"]}`,
-        path: DiggerUtils.removeFieldDirective(this.tableName, c, "unique"),
-        resource: {},
       })),
       ...this.connections.map((c) => ({
         location: `schema/${args["in-schema"]}`,
@@ -1636,8 +1630,7 @@ ${ownerAuthorization(authSpecs)}
 const buildCreateReq = (
   tableName: string,
   primaryKey: KeySpec,
-  compositeKeys: KeySpec[],
-  uniqueFields: string[]
+  compositeKeys: KeySpec[]
 ) => {
   const keys = [
     primaryKey.fields[0],
@@ -1679,25 +1672,9 @@ $util.qr($ctx.args.input.put("${k.fields.slice(1).join("#")}","${k.fields
 #set( $condition = {
   "expression": "${[
     keys.map((f, i) => `attribute_not_exists(#id${i})`).join(" AND "),
-    uniqueFields.map((f, i) => `#attr${i} <> :val${i}`).join(" AND "),
   ].join(" AND ")}",
   "expressionNames": {
-    ${[
-      keys.map((f, i) => `"#id${i}": "${f}"`).join(",\n"),
-      uniqueFields.map((f, i) => `"#attr${i}" : "${f}"`).join(",\n"),
-    ].join(",\n")}
-  }
-  ${
-    uniqueFields.length > 0
-      ? `,"expressionValues": {
-       ${uniqueFields
-         .map(
-           (f, i) =>
-             `":val${i}": $util.dynamodb.toDynamoDB($ctx.arguments.input.${f})`
-         )
-         .join(",\n")}
-  }`
-      : ""
+    ${[keys.map((f, i) => `"#id${i}": "${f}"`).join(",\n")].join(",\n")}
   }
 } )
 #if( $context.args.condition )

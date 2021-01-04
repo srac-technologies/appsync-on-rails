@@ -1,6 +1,7 @@
 type Test @model {
   id: ID!
   strings: [String!]!
+  name: String!
 }
 
 # overrides
