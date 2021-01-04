@@ -629,10 +629,6 @@ const buildGSIs = (
             Projection: {
               ProjectionType: "ALL",
             },
-            ProvisionedThroughput: {
-              ReadCapacityUnits: 5,
-              WriteCapacityUnits: 5,
-            },
           })),
         ...belongsTos
           .filter((b) => !b.custom)
@@ -656,10 +652,6 @@ const buildGSIs = (
             ],
             Projection: {
               ProjectionType: "ALL",
-            },
-            ProvisionedThroughput: {
-              ReadCapacityUnits: 5,
-              WriteCapacityUnits: 5,
             },
           })),
       ],
@@ -711,7 +703,7 @@ const makeTypeModelInput = (
       },
       kind: "InputValueDefinition",
       directives: (f.directives || []).filter(
-        (d) => d.name.value !== "connection"
+        (d) => d.name.value !== "connection" && d.name.value !== "unique"
       ),
     };
   }
@@ -721,6 +713,9 @@ const makeTypeModelInput = (
       return {
         ...f,
         kind: "InputValueDefinition",
+        directives: (f.directives || []).filter(
+          (d) => d.name.value !== "connection" && d.name.value !== "unique"
+        ),
       };
     case "NamedType":
     default:
@@ -731,6 +726,9 @@ const makeTypeModelInput = (
           name: { kind: "Name", value: `Model${f.type.name.value}Input` },
         },
         kind: "InputValueDefinition",
+        directives: (f.directives || []).filter(
+          (d) => d.name.value !== "connection" && d.name.value !== "unique"
+        ),
       };
     case "NonNullType":
       switch (f.type.type.kind) {
@@ -738,6 +736,9 @@ const makeTypeModelInput = (
           return {
             ...f,
             kind: "InputValueDefinition",
+            directives: (f.directives || []).filter(
+              (d) => d.name.value !== "connection" && d.name.value !== "unique"
+            ),
           };
         case "NamedType":
           return {
@@ -750,6 +751,9 @@ const makeTypeModelInput = (
                 value: `Model${f.type.type.name.value}Input`,
               },
             },
+            directives: (f.directives || []).filter(
+              (d) => d.name.value !== "connection" && d.name.value !== "unique"
+            ),
           };
       }
   }
@@ -1094,7 +1098,7 @@ const buildCrudOperations = (
                    },
              kind: "InputValueDefinition",
              directives: (f.directives || []).filter(
-               (d) => d.name.value !== "connection"
+               (d) => d.name.value !== "connection" && d.name.value !== "unique"
              ),
            }
          : {
@@ -1114,7 +1118,7 @@ const buildCrudOperations = (
              })(),
              kind: "InputValueDefinition",
              directives: (f.directives || []).filter(
-               (d) => d.name.value !== "connection"
+               (d) => d.name.value !== "connection" && d.name.value !== "unique"
              ),
            };
      }),
@@ -1167,14 +1171,14 @@ const buildCrudOperations = (
                    },
              kind: "InputValueDefinition",
              directives: (f.directives || []).filter(
-               (d) => d.name.value !== "connection"
+               (d) => d.name.value !== "connection" && d.name.value !== "unique"
              ),
            }
          : {
              ...f,
              kind: "InputValueDefinition",
              directives: (f.directives || []).filter(
-               (d) => d.name.value !== "connection"
+               (d) => d.name.value !== "connection" && d.name.value !== "unique"
              ),
              type: (() => {
                const t = unTypeEasy(f);
@@ -1673,11 +1677,27 @@ $util.qr($ctx.args.input.put("${k.fields.slice(1).join("#")}","${k.fields
   )
   .join("\n")}
 #set( $condition = {
-  "expression": "${[...keys, ...uniqueFields]
-    .map((f, i) => `attribute_not_exists(#id${i})`)
-    .join(" AND ")}",
+  "expression": "${[
+    keys.map((f, i) => `attribute_not_exists(#id${i})`).join(" AND "),
+    uniqueFields.map((f, i) => `#attr${i} <> :val${i}`).join(" AND "),
+  ].join(" AND ")}",
   "expressionNames": {
-    ${[...keys, ...uniqueFields].map((f, i) => `"#id${i}": "${f}"`).join(",\n")}
+    ${[
+      keys.map((f, i) => `"#id${i}": "${f}"`).join(",\n"),
+      uniqueFields.map((f, i) => `"#attr${i}" : "${f}"`).join(",\n"),
+    ].join(",\n")}
+  }
+  ${
+    uniqueFields.length > 0
+      ? `,"expressionValues": {
+       ${uniqueFields
+         .map(
+           (f, i) =>
+             `":val${i}": $util.dynamodb.toDynamoDB($ctx.arguments.input.${f})`
+         )
+         .join(",\n")}
+  }`
+      : ""
   }
 } )
 #if( $context.args.condition )
