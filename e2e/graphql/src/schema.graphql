@@ -4,6 +4,18 @@ type Test @model {
   name: String!
 }
 
+type Auth
+  @model
+  @auth(
+    provider: "AMAZON_COGNITO_USER_POOLS"
+    strategy: { type: "OWNER", ownerField: "userId" }
+    actions: ["read", "update", "create", "delete"]
+  ) {
+  id: ID!
+  userId: String!
+  name: String!
+}
+
 # overrides
 
 type Query {

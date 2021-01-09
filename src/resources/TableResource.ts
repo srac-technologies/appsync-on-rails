@@ -1333,6 +1333,11 @@ const buildGetAuthRes = (authSpecs: AuthSpec[]) => {
       });
   };
   return `
+## [Start] return null early if null **
+#if( $util.isNullOrEmpty($ctx.result) )
+#return
+#end
+## [End] return null early if null **
 ## [Start] Determine request authentication mode **
 #if( $util.isNullOrEmpty($authMode) && !$util.isNull($ctx.identity) && !$util.isNull($ctx.identity.sub) && !$util.isNull($ctx.identity.issuer) && !$util.isNull($ctx.identity.username) && !$util.isNull($ctx.identity.claims) && !$util.isNull($ctx.identity.sourceIp) && !$util.isNull($ctx.identity.defaultAuthStrategy) )
   #set( $authMode = "userPools" )
