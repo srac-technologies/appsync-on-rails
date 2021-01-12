@@ -14,6 +14,18 @@ type Auth
   id: ID!
   userId: String!
   name: String!
+  nested: Nested @connection(name: "AuthNested")
+}
+
+type Nested
+  @model
+  @auth(
+    provider: "AMAZON_COGNITO_USER_POOLS"
+    strategy: { type: "OWNER", ownerField: "userId" }
+    actions: ["read", "update", "create", "delete"]
+  ) {
+  id: ID!
+  userId: String!
 }
 
 # overrides

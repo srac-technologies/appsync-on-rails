@@ -1333,11 +1333,6 @@ const buildGetAuthRes = (authSpecs: AuthSpec[]) => {
       });
   };
   return `
-## [Start] return null early if null **
-#if( $util.isNullOrEmpty($ctx.result) )
-#return
-#end
-## [End] return null early if null **
 ## [Start] Determine request authentication mode **
 #if( $util.isNullOrEmpty($authMode) && !$util.isNull($ctx.identity) && !$util.isNull($ctx.identity.sub) && !$util.isNull($ctx.identity.issuer) && !$util.isNull($ctx.identity.username) && !$util.isNull($ctx.identity.claims) && !$util.isNull($ctx.identity.sourceIp) && !$util.isNull($ctx.identity.defaultAuthStrategy) )
   #set( $authMode = "userPools" )
@@ -1357,7 +1352,7 @@ ${ownerAuthorization(authSpecs)}
 
 
   ## [Start] Throw if unauthorized **
-  #if( !($isStaticGroupAuthorized == true || $isDynamicGroupAuthorized == true || $isOwnerAuthorized == true) )
+  #if(!($util.isNullOrEmpty($ctx.result)) && !($isStaticGroupAuthorized == true || $isDynamicGroupAuthorized == true || $isOwnerAuthorized == true) )
     $util.unauthorized()
   #end
   ## [End] Throw if unauthorized **
@@ -1508,7 +1503,7 @@ ${ownerAuthorization(authSpecs)}
 
 
   ## [Start] Throw if unauthorized **
-  #if( !($isStaticGroupAuthorized == true || ($totalAuthExpression != "")) )
+  #if(!($isStaticGroupAuthorized == true || ($totalAuthExpression != "")) )
     $util.unauthorized()
   #end
   ## [End] Throw if unauthorized **
