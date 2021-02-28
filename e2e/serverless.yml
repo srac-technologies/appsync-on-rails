@@ -11,7 +11,6 @@ custom:
   serverless-offline:
     port: 3002
   appsync-simulator:
-    location: ".webpack/service"
     apiKey: "da2-fakeApiId123456"
   dynamodb:
     stages:
@@ -51,11 +50,12 @@ provider:
   environment:
     AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
     STAGE: ${self:provider.stage}
-    GRAPHQL_ENDPOINT: !GetAtt ["GraphQlApi", "GraphQLUrl"]
 
 functions:
   getInt:
     handler: src/handler.getInt
+  echo:
+    handler: src/handler.echo
 
 resources:
   - ${file(./graphql/db.js)}

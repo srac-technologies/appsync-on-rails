@@ -36,6 +36,12 @@ type Query {
 
 type Mutation {
   putInt(inp: Int): Int
+  putTest(input: CreateAuthInput): Auth
+    @function(name: "echo")
+    @auth(
+      provider: "AMAZON_COGNITO_USER_POOLS"
+      strategy: { type: "OWNER", ownerField: "userId" }
+    )
 }
 
 # 以下、AppSyncとDynamoDBで使用可能な GraphQL Schema の共通定義
