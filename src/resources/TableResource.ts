@@ -26,6 +26,10 @@ export type ConnectionSpec = {
   custom: boolean;
 };
 
+export type AuthPublicStrategySpec = {
+  type: "PUBLIC";
+};
+
 export type AuthOwnerStrategySpec = {
   type: "OWNER";
   ownerField: string;
@@ -38,7 +42,10 @@ export type AuthGroupStrategySpec = {
   groupClaim?: string;
 };
 
-export type AuthStrategySpec = AuthOwnerStrategySpec | AuthGroupStrategySpec;
+export type AuthStrategySpec =
+  | AuthOwnerStrategySpec
+  | AuthGroupStrategySpec
+  | AuthPublicStrategySpec;
 
 export type ActionType = "create" | "update" | "read" | "delete";
 
@@ -1340,6 +1347,22 @@ const buildGetAuthRes = (authSpecs: AuthSpec[]) => {
 ## [End] Determine request authentication mode **
 ## [Start] Check authMode and execute owner/group checks **
 #if( $authMode == "userPools" )
+
+#set($isPublicAccessGranted = false)
+${
+  authSpecs.some(
+    (a) =>
+      a.provider === "AMAZON_COGNITO_USER_POOLS" && a.strategy.type === "PUBLIC"
+  )
+    ? `
+## [Start] set true if PUBLIC access was granted **
+#if( $authMode == "userPools" )
+  #set($isPublicAccessGranted = true)
+#end
+`
+    : ""
+}
+
   ## [Start] Static Group Authorization Checks **
   #set($isStaticGroupAuthorized = $util.defaultIfNull(
             $isStaticGroupAuthorized, false))
@@ -1352,7 +1375,7 @@ ${ownerAuthorization(authSpecs)}
 
 
   ## [Start] Throw if unauthorized **
-  #if(!($util.isNullOrEmpty($ctx.result)) && !($isStaticGroupAuthorized == true || $isDynamicGroupAuthorized == true || $isOwnerAuthorized == true) )
+  #if(!($util.isNullOrEmpty($ctx.result)) && !($isStaticGroupAuthorized == true || $isDynamicGroupAuthorized == true || $isOwnerAuthorized == true || $isPublicAccessGranted) )
     $util.unauthorized()
   #end
   ## [End] Throw if unauthorized **
@@ -1436,6 +1459,20 @@ const buildAuthReq = (authSpecs: AuthSpec[], action: ActionType) => {
 ## [End] Determine request authentication mode **
 ## [Start] Check authMode and execute owner/group checks **
 #if( $authMode == "userPools" )
+#set($isPublicAccessGranted = false)
+${
+  authSpecs.some(
+    (a) =>
+      a.provider === "AMAZON_COGNITO_USER_POOLS" && a.strategy.type === "PUBLIC"
+  )
+    ? `
+## [Start] set true if PUBLIC access was granted **
+#if( $authMode == "userPools" )
+  #set($isPublicAccessGranted = true)
+#end
+`
+    : ""
+}
   ## [Start] Static Group Authorization Checks **
   #set($isStaticGroupAuthorized = $util.defaultIfNull(
             $isStaticGroupAuthorized, false))
@@ -1503,7 +1540,7 @@ ${ownerAuthorization(authSpecs)}
 
 
   ## [Start] Throw if unauthorized **
-  #if(!($isStaticGroupAuthorized == true || ($totalAuthExpression != "")) )
+  #if(!($isStaticGroupAuthorized == true || ($totalAuthExpression != "") || $isPublicAccessGranted == true) )
     $util.unauthorized()
   #end
   ## [End] Throw if unauthorized **
@@ -1595,6 +1632,20 @@ const buildAuthListRes = (authSpecs: AuthSpec[]) => {
   #set( $authMode = "userPools" )
 #end
 ## [End] Determine request authentication mode **
+#set($isPublicAccessGranted = false)
+${
+  authSpecs.some(
+    (a) =>
+      a.provider === "AMAZON_COGNITO_USER_POOLS" && a.strategy.type === "PUBLIC"
+  )
+    ? `
+## [Start] set true if PUBLIC access was granted **
+#if( $authMode == "userPools" )
+  #set($isPublicAccessGranted = true)
+#end
+`
+    : ""
+}
 ## [Start] Check authMode and execute owner/group checks **
 #if( $authMode == "userPools" )
   ## [Start] Static Group Authorization Checks **
@@ -1615,7 +1666,7 @@ ${ownerAuthorization(authSpecs)}
       ## [End] Owner Authorization Checks **
 
 
-      #if( ($isLocalDynamicGroupAuthorized == true || $isLocalOwnerAuthorized == true) )
+      #if( ($isLocalDynamicGroupAuthorized == true || $isLocalOwnerAuthorized == true || $isPublicAccessGranted == true) )
         $util.qr($items.add($item))
       #end
     #end

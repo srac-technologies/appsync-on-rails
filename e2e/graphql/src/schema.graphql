@@ -2,6 +2,24 @@ type Test @model {
   id: ID!
   strings: [String!]!
   name: String!
+  subs: [SubTest] @connection(name: "TestSubTest", foreignKey: "parentId")
+}
+
+type SubTest
+  @model
+  @auth(
+    provider: "AMAZON_COGNITO_USER_POOLS"
+    strategy: { type: "GROUP", groups: ["admin"] }
+    actions: ["read", "update", "create", "delete"]
+  )
+  @auth(
+    provider: "AMAZON_COGNITO_USER_POOLS"
+    strategy: { type: "PUBLIC" }
+    actions: ["read"]
+  ) {
+  id: ID!
+  name: String!
+  parent: Test @connection(name: "TestSubTest", foreignKey: "parentId")
 }
 
 type Auth
