@@ -2029,7 +2029,7 @@ const buildHasOne = (yours: string, mine: string, typeName: string) => {
     "version": "2018-05-29",
     "operation": "GetItem",
     "key": {
-        "${yours}": $util.dynamodb.toDynamoDBJson($ctx.source.${mine})
+        "${yours}": $util.dynamodb.toDynamoDBJson("$ctx.source.${mine}")
     }
 }
 `,
