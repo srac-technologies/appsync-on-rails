@@ -1067,7 +1067,7 @@ const buildCrudOperations = (
            (c) => c.node.name.value === f.name.value && c.custom
          )
      )
-     .map((f) => {
+     .map((f): InputValueDefinitionNode => {
        const connection = connections.find(
          (c) => c.node.name.value === f.name.value
        );
@@ -1122,6 +1122,12 @@ const buildCrudOperations = (
                (d) => d.name.value !== "connection" && d.name.value !== "unique"
              ),
            };
+     })
+     .filter((node, inx, array) => {
+       if (array.some((a, i) => a.name.value === node.name.value && i < inx)) {
+         return false;
+       }
+       return true;
      }),
  })}
  ${print({
@@ -1140,7 +1146,7 @@ const buildCrudOperations = (
            (c) => c.node.name.value === f.name.value && c.custom
          )
      )
-     .map((f) => {
+     .map((f): InputValueDefinitionNode => {
        const connection = connections.find(
          (c) => c.node.name.value === f.name.value
        );
@@ -1195,6 +1201,12 @@ const buildCrudOperations = (
                });
              })(),
            };
+     })
+     .filter((node, inx, array) => {
+       if (array.some((a, i) => a.name.value === node.name.value && i < inx)) {
+         return false;
+       }
+       return true;
      }),
  })}
  input Delete${typeName}Input {

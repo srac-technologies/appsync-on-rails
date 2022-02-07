@@ -3,6 +3,13 @@ type Test @model {
   strings: [String!]!
   name: String!
   subs: [SubTest] @connection(name: "TestSubTest", foreignKey: "parentId")
+
+  other: OtherModel @connection(name: "Other", foreignKey: "id")
+}
+
+type OtherModel @model {
+  id: ID!
+  name: String!
 }
 
 type SubTest
