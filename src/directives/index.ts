@@ -4,6 +4,8 @@ import { ModelDirective } from "./model/ModelDirective";
 import { KeyDirective } from "./model/KeyDirective";
 import { AuthDirective } from "./auth/AuthDirective";
 import { UniqueDirective } from "./model/UniqueDirective";
+import { MultiTenancyDirective } from "./model/MultiTenancyDirective";
+
 export default [
   ModelDirective,
   KeyDirective,
@@ -11,4 +13,5 @@ export default [
   FunctionDirective,
   AuthDirective,
   UniqueDirective,
+  MultiTenancyDirective
 ];

@@ -1,0 +1,16 @@
+{
+  "name": "test-utils",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts":{
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "amplify-appsync-simulator": "^2.4.1",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.4",
+    "vite": "^4.3.5",
+    "vitest": "^0.31.0"
+  }
+}

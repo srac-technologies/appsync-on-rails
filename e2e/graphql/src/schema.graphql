@@ -7,6 +7,13 @@ type Test @model {
   other: OtherModel @connection(name: "Other", foreignKey: "id")
 }
 
+type SomeTest @model @multiTenancy @key(fields: ["parentId", "date"], queryField: "listSomeTestsByDate", name: "Date") {
+  id: ID!
+  name: String!
+  date: String!
+  parentId: String!
+}
+
 type OtherModel @model {
   id: ID!
   name: String!

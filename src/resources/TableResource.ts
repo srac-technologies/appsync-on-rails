@@ -15,6 +15,8 @@ export type KeySpec = {
   name?: string;
   fields: [string, ...string[]];
   queryField?: string;
+
+  multiTenancy?: boolean;
 };
 export type ConnectionSpec = {
   with: string;
@@ -65,6 +67,12 @@ export type AuthBaseSpec = {
   actions: ActionType[];
 };
 
+export type MultiTenancySpec = {
+  field: string;
+  indexSuffix: string;
+  ownerField: string;
+};
+
 export type AuthSpec = (AuthUserPoolsSpec | AuthKeySpec | AuthIamSpec) &
   AuthBaseSpec;
 
@@ -84,6 +92,30 @@ export class TableResource implements Printable {
   hasMany_: ConnectionSpec[] = [];
   hasOne_: ConnectionSpec[] = [];
   belongsTo_: ConnectionSpec[] = [];
+
+  multiTenancy?: MultiTenancySpec;
+  public setMultiTenancy(spec: MultiTenancySpec){
+    this.multiTenancy = spec;
+  }
+
+  get multiTenancyKeys():KeySpec[] {
+    const mt = this.multiTenancy;
+    if(!mt){
+      return [];
+    }
+
+    return [...this.keys.filter(x=>x.name).map(k=>({
+      name: `${k.name}${mt.indexSuffix}`,
+      fields: [mt.field, ...k.fields] as [string, ...string[]],
+      queryField: `${k.queryField}${mt.indexSuffix}`,
+      multiTenancy: true
+    })), {
+      fields:[mt.field, ...this.primaryKey.fields],
+      queryField: `list${this.tableName}s${mt.indexSuffix}`,
+      name: `PrimaryKey${mt.indexSuffix}`,
+      multiTenancy: true
+    }];
+  }
 
   private uniqueFields: string[] = [];
 
@@ -165,7 +197,7 @@ export class TableResource implements Printable {
             resource: {
               Resources: {
                 [this.tableName + "Table"]: buildGSIs(
-                  this.keys,
+                  [...this.keys, ...this.multiTenancyKeys],
                   this.belongsTo_,
                   {
                     Type: "AWS::DynamoDB::Table",
@@ -247,7 +279,8 @@ export class TableResource implements Printable {
         resource: buildCreateReq(
           this.tableName,
           this.primaryKey,
-          this.keys.filter((k) => k.fields.length > 2)
+          [...this.keys, ...this.multiTenancyKeys].filter((k) => k.fields.length > 2),
+          this.multiTenancy
         ),
       },
       {
@@ -305,6 +338,11 @@ export class TableResource implements Printable {
       {
         location: `schema/${args["in-schema"]}`,
         path: DiggerUtils.removeObjectDirective(this.tableName, "model"),
+        resource: {},
+      },
+      {
+        location: `schema/${args["in-schema"]}`,
+        path: DiggerUtils.removeObjectDirective(this.tableName, "multiTenancy"),
         resource: {},
       },
       {
@@ -405,7 +443,7 @@ export class TableResource implements Printable {
         ),
         resource: {},
       })),
-      ...this.keys
+      ...[...this.keys, ...this.multiTenancyKeys]
         .filter((k) => k.name)
         .map((k) => [
           {
@@ -422,7 +460,7 @@ export class TableResource implements Printable {
           {
             location: `mapping-templates/Query.${k.queryField}.request.vtl`,
             path: "",
-            resource: buildQueryListReq(k),
+            resource: buildQueryListReq(k, this.multiTenancy),
           },
           {
             location: `mapping-templates/Query.${k.queryField}.response.vtl`,
@@ -843,7 +881,7 @@ input Model${connection.name}CompositeKeyConditionInput {
 input Model${connection.name}CompositeKeyInput {
   ${connection.sortableWith?.map((f) => `${f}: String`).join("\n")}
 }
-    
+
     `
         : `
 input Model${connection.name}KeyConditionInput {
@@ -913,7 +951,7 @@ const buildCrudOperations = (
     authSpec,
     "read"
   )}
-  ${keyOperations.map((o) => o.query).join("\n")} 
+  ${keyOperations.map((o) => o.query).join("\n")}
  }
  extend type Mutation {
   create${typeName}(input: Create${typeName}Input!, condition: Model${typeName}ConditionInput): ${typeName} ${buildAuthDirectives(
@@ -929,7 +967,7 @@ const buildCrudOperations = (
     "delete"
   )}
  }
- type Model${typeName}Connection 
+ type Model${typeName}Connection
  ${buildAuthDirectives(authSpec, "read")}
  {
    items: [${typeName}]
@@ -1266,7 +1304,7 @@ const buildListReq = () => {
   $util.qr($ListRequest.put("operation", "Scan"))
 #end
 $util.toJson($ListRequest)
-  
+
   `;
 };
 
@@ -1690,10 +1728,18 @@ ${ownerAuthorization(authSpecs)}
 `;
 };
 
+
+const buildMultiTenancyStashLogicForMutation = (multiTenancy?:MultiTenancySpec) => multiTenancy ? `
+## [Start] Set MultiTenancy Key **
+$util.qr($context.args.input.put("${multiTenancy?.field}", "tenantId"))
+## [End] Set MultiTenancy Key **
+` : '';
+
 const buildCreateReq = (
   tableName: string,
   primaryKey: KeySpec,
-  compositeKeys: KeySpec[]
+  compositeKeys: KeySpec[],
+  multiTenancy?:MultiTenancySpec
 ) => {
   const keys = [
     primaryKey.fields[0],
@@ -1711,10 +1757,11 @@ ${
       .map((k) => `\${ctx.args.input.${k}}`)
       .join("#")}")
 } )
-## [End] Set the primary @key. ** 
+## [End] Set the primary @key. **
 `) ||
   ""
 }
+${buildMultiTenancyStashLogicForMutation(multiTenancy)}
 ## [Start] Prepare DynamoDB PutItem Request. **
 #set( $createdAt = $util.time.nowISO8601() )
 ## Automatically set the createdAt timestamp. **
@@ -2357,21 +2404,32 @@ $util.toJson($res)
   `;
 };
 
+type ArgumentDef =  {
+  name:string;
+  type:string
+}
+
+const buildQueryArguments = (typeName:string, keySpec: KeySpec): ArgumentDef[] => {
+    if (keySpec.fields.length === 1) {
+      return [{name:keySpec.fields[0], type: 'String'}];
+    }
+    if (keySpec.fields.length === 2) {
+      return [ {name:keySpec.fields[0], type: 'String'}, {name:keySpec.fields[1], type:'ModelStringConditionInput'}];
+    }
+    return [ {name:keySpec.fields[0], type: 'String'}, {name: `${keySpec.fields[1]}${keySpec.fields
+      .slice(2)
+      .map((f) => f[0].toUpperCase() + f.slice(1))
+      .join("")}`, type: `Model${typeName}${keySpec.name}CompositeKeyConditionInput`}];
+}
+
+const filterQueryArgumentsIfMultiTenancy = (args: ArgumentDef[], keySpec:KeySpec): ArgumentDef[] => args.filter(x=>!keySpec.multiTenancy ||  x.name !== keySpec.fields[0])
+
+const printQueryArguments = (args:ArgumentDef[])=>args.map(a=>`${a.name}: ${a.type}`).join(', ')
+
 const buildQueryOperations = (typeName: string, keySpec: KeySpec) => {
   return `
 extend type Query {
-  ${keySpec.queryField} (${(() => {
-    if (keySpec.fields.length === 1) {
-      return `${keySpec.fields[0]}: String`;
-    }
-    if (keySpec.fields.length === 2) {
-      return `${keySpec.fields[0]}: String,  ${keySpec.fields[1]}: ModelStringConditionInput`;
-    }
-    return `${keySpec.fields[0]}: String,  ${keySpec.fields[1]}${keySpec.fields
-      .slice(2)
-      .map((f) => f[0].toUpperCase() + f.slice(1))
-      .join("")}: Model${typeName}${keySpec.name}CompositeKeyConditionInput`;
-  })()}, filter: Model${typeName}FilterInput, limit: Int, nextToken: String): Model${typeName}Connection
+  ${keySpec.queryField} (${printQueryArguments(filterQueryArgumentsIfMultiTenancy(buildQueryArguments(typeName, keySpec), keySpec))}, filter: Model${typeName}FilterInput, limit: Int, nextToken: String): Model${typeName}Connection
  }
 input Model${typeName}${keySpec.name}CompositeKeyConditionInput {
   eq: Model${typeName}${keySpec.name}CompositeKeyInput
@@ -2391,10 +2449,32 @@ input Model${typeName}${keySpec.name}CompositeKeyInput {
 `;
 };
 
-const buildQueryListReq = (keySpec: KeySpec): string => {
+const buildMultiTenancyStashLogicForQuery = (keySpec: KeySpec, multiTenancy?:MultiTenancySpec) => {
+  if(!multiTenancy){
+    return ''
+  }
   if (keySpec.fields.length == 2) {
     return `
-##[Start] Set query expression for @key **
+
+##[Start] Set query expression for @multiTenancy **
+$util.qr($ctx.args.put("${keySpec.fields[0]}", "tenantId"))
+##[End] Set query expression for @multiTenancy **
+
+`
+  }
+return `
+
+##[Start] Set query expression for @multiTenancy **
+$util.qr($ctx.args.put("${keySpec.fields[0]}", "tenantId"))
+##[End] Set query expression for @multiTenancy **
+
+`
+}
+
+const buildQueryListReq = (keySpec: KeySpec, multiTenancy?:MultiTenancySpec): string => {
+  if (keySpec.fields.length == 2) {
+    return `
+${buildMultiTenancyStashLogicForQuery(keySpec, multiTenancy)}##[Start] Set query expression for @key **
 #set($modelQueryExpression = {})
 ##[Start] Validate key arguments. **
 #if(!$util.isNull($ctx.args.${keySpec.fields[1]}) && $util.isNull($ctx.args.${keySpec.fields[0]}))
@@ -2407,7 +2487,7 @@ $util.error("When providing argument '${keySpec.fields[1]}' you must also provid
   "#${keySpec.fields[0]}": "${keySpec.fields[0]}"
 })
   #set($modelQueryExpression.expressionValues = {
-  ":yearMonth": {
+  ":${keySpec.fields[0]}": {
     "S": "$ctx.args.${keySpec.fields[0]}"
   }
 })
@@ -2477,7 +2557,7 @@ $util.toJson($QueryRequest)
       .map((f) => f[0].toUpperCase() + f.slice(1))
       .join("");
   return `
-##[Start] Set query expression for @key **
+${buildMultiTenancyStashLogicForQuery(keySpec, multiTenancy)}##[Start] Set query expression for @key **
 #set($modelQueryExpression = {})
 #if(!$util.isNull($ctx.args.${keySpec.fields[0]}))
   #set($modelQueryExpression.expression = "#${keySpec.fields[0]} = :${
@@ -2496,13 +2576,9 @@ $util.toJson($QueryRequest)
 #set($sortKeyValue = "")
 #set($sortKeyValue2 = "")
 #if(!$util.isNull($ctx.args.${compositeKey}) && !$util.isNull($ctx.args.${compositeKey}.beginsWith))
-  #if(!$util.isNull($ctx.args.${compositeKey}.beginsWith.${
-    keySpec.fields[1]
-  })) #set($sortKeyValue = "$ctx.args.${compositeKey}.beginsWith.${
-    keySpec.fields[1]
-  }" ) #end
+#if( !$util.isNull($ctx.args.${compositeKey}.beginsWith.${keySpec.fields[1]}) ) #set( $sortKeyValue = "$ctx.args.${compositeKey}.beginsWith.${keySpec.fields[1]}" ) #end
   ${keySpec.fields
-    .slice(1)
+    .slice(2)
     .map(
       (f) => `
   #if( !$util.isNull($ctx.args.${compositeKey}.beginsWith.${f}) ) #set( $sortKeyValue = "$sortKeyValue#$ctx.args.${compositeKey}.beginsWith.${f}" ) #end
